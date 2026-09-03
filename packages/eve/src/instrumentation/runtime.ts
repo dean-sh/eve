@@ -49,12 +49,9 @@ import { contextStorage, type ContextContainer } from "#context/container.js";
 import {
   ChannelInstrumentationKey,
   OtelTraceEnabledKey,
-  ParentSessionKey,
   ParentTraceContextKey,
-  SessionCallbackKey,
   SessionTraceSeedKey,
 } from "#context/keys.js";
-import { ChannelKey } from "#runtime/sessions/runtime-context-keys.js";
 import { normalizeChannelAudience } from "#shared/channel-audience.js";
 import { withErrorContent } from "#tracing/error-content-context.js";
 import type { AgentSamplingOperation } from "#tracing/agent-span-contract.js";
@@ -63,7 +60,7 @@ import {
   resolveTracePolicy,
   resolveTracePolicyDecision,
 } from "#tracing/sampled-trace.js";
-import { resolveParentLineage } from "#instrumentation/parent-lineage.js";
+import { readInstrumentationSessionContext } from "#instrumentation/session-context.js";
 import type { ChannelInstrumentationProjection, SessionTraceContext } from "#channel/types.js";
 import { readSessionTraceDecision } from "#tracing/agent-trace-context-store.js";
 import {
@@ -75,7 +72,6 @@ import {
   formatTraceContentCeiling,
   type ForwardedTraceAssertion,
   readForwardedTraceAssertion,
-  resolveForwardedTraceSeed,
   traceContentCeilingToDecision,
 } from "#shared/forwarded-trace-policy.js";
 
@@ -211,34 +207,14 @@ export function bindInstrumentationRuntime(
 ): ExecutionInstrumentation | undefined {
   if (runtime === undefined) return undefined;
   const baseHooks = runtime.hooks;
-  const readSessionContext = () => {
-    const context = contextStorage.getStore() ?? ctx;
-    const storedTraceSeed = context.get(SessionTraceSeedKey);
-    const resolvedTraceState = resolveForwardedTraceSeed(storedTraceSeed);
-    const traceSeed =
-      storedTraceSeed === undefined || resolvedTraceState === undefined
-        ? undefined
-        : { ...storedTraceSeed, ...resolvedTraceState };
-    const parentTraceContext = context.get(ParentTraceContextKey);
-    const parent = context.get(ParentSessionKey),
-      channel = context.get(ChannelKey);
-    return {
-      channel,
-      context,
-      instrumentation: context.get(ChannelInstrumentationKey),
-      forwardedTracePolicy: readForwardedTraceAssertion(traceSeed?.forwardedTracePolicy),
-      parent,
-      parentLineage: resolveParentLineage(parent, channel, context.get(SessionCallbackKey)),
-      parentTraceContext,
-      traceSeed,
-    };
-  };
+  const readSessionContext = () =>
+    readInstrumentationSessionContext(contextStorage.getStore() ?? ctx);
   const bindHooks = (sessionContext: ReturnType<typeof readSessionContext>) => {
     const channel = sessionContext.instrumentation;
     return (
       baseHooks.forTrace?.({
         agentName: boundSession.agentName,
-        audience: normalizeChannelAudience(channel?.metadata.audience),
+        audience: sessionContext.audience,
         channelType: channel?.channelType,
       }) ?? baseHooks
     );
@@ -260,15 +236,15 @@ export function bindInstrumentationRuntime(
     sessionContext: ReturnType<typeof readSessionContext>,
   ) => {
     const channel = sessionContext.instrumentation;
-    const audience = normalizeChannelAudience(channel?.metadata.audience);
     return prepareTurnTraceContext({
       ...input,
       agentName: boundSession.agentName,
-      channelAudience: audience,
+      channelAudience: sessionContext.audience,
       channelType: channel?.channelType,
       instrumentation: runtime,
       parentLineage: sessionContext.parentLineage,
       parentTraceContext: sessionContext.parentTraceContext,
+      ...sessionContext.principals,
       rootSessionId: sessionContext.parent?.rootSessionId ?? boundSession.rootSessionId,
       sessionId: boundSession.sessionId,
       traceSeed: sessionContext.traceSeed,

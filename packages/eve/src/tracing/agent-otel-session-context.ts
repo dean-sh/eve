@@ -111,6 +111,8 @@ export function createAgentOtelSessionContext(
           : freshTurnContext(input, event.idempotencyKey, session.decision);
     const turn: AgentTurnTraceState = {
       context: turnContext,
+      currentPrincipal: event.currentPrincipal,
+      initiatorPrincipal: event.initiatorPrincipal,
       parentLineage: event.parentLineage ?? session.parentLineage,
       parentIsRemote:
         parent === undefined ? undefined : "isRemote" in parent && parent.isRemote === true,

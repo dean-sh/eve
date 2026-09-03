@@ -6,6 +6,10 @@ export const AGENT_INVOCATION_ROLES = {
 
 export const AGENT_TRACE_ATTRIBUTES = {
   invocationRole: "agent.invocation.role",
+  principalCurrentId: "agent.principal.current.id",
+  principalCurrentType: "agent.principal.current.type",
+  principalInitiatorId: "agent.principal.initiator.id",
+  principalInitiatorType: "agent.principal.initiator.type",
   sessionId: "agent.session.id",
   vercelSessionId: "vercel.session_id",
 } as const;

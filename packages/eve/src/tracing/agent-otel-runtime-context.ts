@@ -1,5 +1,8 @@
 import type { AgentTurnTraceState } from "#tracing/agent-trace-state.js";
-import { agentTraceIdentityAttributes } from "#tracing/agent-otel-attributes.js";
+import {
+  AGENT_TRACE_ATTRIBUTES,
+  agentTraceIdentityAttributes,
+} from "#tracing/agent-otel-attributes.js";
 import {
   TELEMETRY_CONTEXT_ATTRIBUTES,
   TELEMETRY_CONTEXT_BYTES,
@@ -40,6 +43,26 @@ export function agentLineageAttributes(turn: AgentTurnTraceState): Record<string
   const attributes: Record<string, string> = {
     "agent.root_run.id": turn.rootSessionId,
   };
+  setOptionalAttribute(
+    attributes,
+    AGENT_TRACE_ATTRIBUTES.principalCurrentId,
+    turn.currentPrincipal?.id,
+  );
+  setOptionalAttribute(
+    attributes,
+    AGENT_TRACE_ATTRIBUTES.principalCurrentType,
+    turn.currentPrincipal?.type,
+  );
+  setOptionalAttribute(
+    attributes,
+    AGENT_TRACE_ATTRIBUTES.principalInitiatorId,
+    turn.initiatorPrincipal?.id,
+  );
+  setOptionalAttribute(
+    attributes,
+    AGENT_TRACE_ATTRIBUTES.principalInitiatorType,
+    turn.initiatorPrincipal?.type,
+  );
   if (turn.parentLineage !== undefined) {
     attributes["agent.parent_run.id"] = turn.parentLineage.sessionId;
     attributes["agent.parent_call.id"] = turn.parentLineage.callId;
@@ -159,4 +182,12 @@ function flattenContextAttribute(
     }
     seen.delete(value);
   }
+}
+
+function setOptionalAttribute(
+  attributes: Record<string, string>,
+  key: string,
+  value: string | undefined,
+): void {
+  if (value !== undefined) attributes[key] = value;
 }
