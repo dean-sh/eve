@@ -15,6 +15,7 @@ import type {
 } from "#instrumentation/lifecycle.js";
 import type { JsonValue } from "#shared/json.js";
 import { contentAttribute } from "#tracing/agent-otel-content.js";
+import { agentTraceIdentityAttributes } from "#tracing/agent-otel-attributes.js";
 import { withChannelAudience } from "#tracing/channel-audience-context.js";
 import type { AgentActionContext } from "#tracing/agent-action-instrumentation.js";
 import type { AgentSpanIdGenerator } from "#tracing/agent-span-id-generator.js";
@@ -102,10 +103,13 @@ export function createAgentApprovalInstrumentation(input: {
               "agent.approval.request_id": state.requestId,
               "agent.framework.name": "eve",
               "agent.framework.version": input.frameworkVersion,
-              "agent.session.id": state.sessionId,
               "agent.step.attempt": state.attemptIndex,
               "agent.step.index": state.stepIndex,
               "agent.turn.id": state.turnId,
+              ...agentTraceIdentityAttributes({
+                rootSessionId: state.rootSessionId,
+                sessionId: state.sessionId,
+              }),
             },
             startTime: state.startTimeMs,
           },

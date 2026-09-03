@@ -14,7 +14,7 @@ import { contextStorage } from "#context/container.js";
 import { SessionTraceSeedKey } from "#context/keys.js";
 import { withoutInstrumentationContent } from "#instrumentation/content.js";
 import { instrumentationEventForTraceDecision } from "#instrumentation/content-policy.js";
-import type { AgentTraceStateStore, AgentTurnTraceState } from "#tracing/agent-trace-state.js";
+import type { AgentTraceStateStore } from "#tracing/agent-trace-state.js";
 import {
   contentAttribute,
   genAiInputMessagesAttribute,
@@ -31,8 +31,14 @@ import { createAgentApprovalInstrumentation } from "#tracing/agent-approval-inst
 import { createAgentChannelDeliveryInstrumentation } from "#tracing/agent-channel-delivery-instrumentation.js";
 import { createAgentToolInstrumentation } from "#tracing/agent-tool-instrumentation.js";
 import { markAgentTraceContext } from "#tracing/agent-trace-context.js";
+import { agentTraceIdentityAttributes } from "#tracing/agent-otel-attributes.js";
 import * as runtimeAttributes from "#tracing/agent-otel-runtime-context.js";
-import { setAgentUsage } from "#tracing/agent-otel-usage.js";
+import {
+  readGatewayCost,
+  setAgentInvocationUsage,
+  setAgentUsage,
+  setGenAiUsage,
+} from "#tracing/agent-otel-usage.js";
 import { createAgentOtelSessionContext } from "#tracing/agent-otel-session-context.js";
 import type { TraceCapturePolicy } from "#tracing/otel-declaration.js";
 import { isSampledTrace, resolveTracePolicyDecision } from "#tracing/sampled-trace.js";
@@ -78,6 +84,7 @@ export interface AgentOtelInstrumentationInput {
   readonly recordOutputs?: boolean;
   readonly frameworkVersion: string;
   readonly idGenerator: AgentSpanIdGenerator;
+  readonly samplesTrace?: (traceId: string) => boolean;
   readonly stateStore: AgentTraceStateStore;
   readonly tracer: Tracer;
   readonly tracePolicy?: TraceCapturePolicy;
@@ -216,13 +223,16 @@ export function createAgentOtelInstrumentation(
           "agent.step",
           {
             attributes: {
-              "agent.session.id": event.scope.sessionId,
               "agent.framework.name": "eve",
               "agent.framework.version": input.frameworkVersion,
               "agent.step.attempt": event.scope.attemptIndex,
               "agent.step.index": event.scope.stepIndex,
               "agent.turn.id": event.scope.turnId,
               "agent.name": event.scope.functionId,
+              ...agentTraceIdentityAttributes({
+                rootSessionId: event.scope.rootSessionId ?? event.scope.sessionId,
+                sessionId: event.scope.sessionId,
+              }),
               ...runtimeAttributes.runtimeContextAttributes(event.runtimeContext),
             },
             links:
@@ -284,6 +294,7 @@ export function createAgentOtelInstrumentation(
   const onSessionTransition = async (
     event: InstrumentationSessionTransitionEvent,
   ): Promise<void> => {
+    await actions.flushForSessionTransition(event);
     if (event.type === "session.failed" && event.turnId !== undefined) {
       await input.stateStore.updateTurn(event.sessionId, event.turnId, (turn) => ({
         ...turn,
@@ -296,7 +307,19 @@ export function createAgentOtelInstrumentation(
         const session = await input.stateStore.getSession(event.sessionId);
         if (isSampledTrace(turn.context)) {
           const agentName = session?.agentName ?? turn.subagentName;
-          const span = input.idGenerator.withSpanId(turn.context.spanId, () =>
+          const parentContext =
+            turn.parentSpanId === undefined
+              ? withChannelAudience(ROOT_CONTEXT, session?.channelAudience)
+              : withChannelAudience(
+                  contextFromSpanContext({
+                    isRemote: turn.parentIsRemote ?? false,
+                    spanId: turn.parentSpanId,
+                    traceFlags: turn.context.traceFlags,
+                    traceId: turn.context.traceId,
+                  }),
+                  session?.channelAudience,
+                );
+          const startSpan = () =>
             input.tracer.startSpan(
               agentSpanName(agentName),
               {
@@ -305,27 +328,26 @@ export function createAgentOtelInstrumentation(
                   "agent.framework.version": input.frameworkVersion,
                   "agent.name": agentName,
                   ...runtimeAttributes.agentLineageAttributes(turn),
-                  "agent.session.id": event.sessionId,
                   "agent.subagent.name": turn.subagentName,
                   "agent.turn.id": event.turnId,
                   "agent.turn.sequence": turn.sequence,
                   "gen_ai.agent.name": agentName,
-                  "gen_ai.conversation.id": event.sessionId,
                   "gen_ai.operation.name": "invoke_agent",
+                  ...agentTraceIdentityAttributes({
+                    rootSessionId: turn.rootSessionId,
+                    sessionId: event.sessionId,
+                  }),
                 },
                 kind: SpanKind.INTERNAL,
+                root: turn.parentSpanId === undefined,
                 startTime: turn.startTimeMs,
               },
-              withChannelAudience(
-                contextFromSpanContext({
-                  isRemote: turn.parentIsRemote ?? false,
-                  spanId: turn.parentSpanId,
-                  traceFlags: turn.context.traceFlags,
-                  traceId: turn.context.traceId,
-                }),
-                session?.channelAudience,
-              ),
-            ),
+              parentContext,
+            );
+          const span = input.idGenerator.withSpanId(turn.context.spanId, () =>
+            turn.parentSpanId === undefined
+              ? input.idGenerator.withTraceId(turn.context.traceId, startSpan)
+              : startSpan(),
           );
           setAgentInvocationUsage(span, turn.modelUsage);
           span.addEvent("turn.started", undefined, turn.startTimeMs);
@@ -362,8 +384,13 @@ export function createAgentOtelInstrumentation(
           "gen_ai.operation.name": "chat",
           "gen_ai.provider.name": event.model.provider,
           "gen_ai.request.model": event.model.modelId,
+          ...agentTraceIdentityAttributes({
+            rootSessionId: event.scope.rootSessionId ?? event.scope.sessionId,
+            sessionId: event.scope.sessionId,
+          }),
           ...runtimeAttributes.runtimeContextAttributes(event.runtimeContext),
         },
+        kind: SpanKind.CLIENT,
       },
       attempt.context,
     );
@@ -394,7 +421,10 @@ export function createAgentOtelInstrumentation(
       recordError(state.span, event.error);
     } else {
       await recordTurnUsage(event);
-      setAgentUsage(state.span, event.usage);
+      setGenAiUsage(state.span, event.usage);
+      if (event.responseId !== undefined) {
+        state.span.setAttribute("gen_ai.response.id", event.responseId);
+      }
       state.span.setAttribute("gen_ai.response.finish_reasons", [event.finishReason]);
       const attempt = steps.get(event.scope);
       if (attempt !== undefined) setAgentUsage(attempt.span, event.usage);
@@ -489,6 +519,7 @@ export function createAgentOtelInstrumentation(
     ensureSessionContext,
     frameworkVersion: input.frameworkVersion,
     idGenerator: input.idGenerator,
+    prepareTurnTrace,
     recordInputs,
     stateStore: input.stateStore,
     tracer: input.tracer,
@@ -632,59 +663,12 @@ function contextFromSpanContext(spanContext: SpanContext): Context {
   return trace.setSpan(ROOT_CONTEXT, trace.wrapSpanContext(spanContext));
 }
 
-/**
- * Extracts cost data from a step result's provider metadata. Only Vercel AI
- * Gateway reports it (`providerMetadata.gateway`): raw inference cost, the
- * gateway's surcharged total, the input/output split, and the generation id
- * for dashboard reconciliation. Values arrive as USD strings; anything
- * missing or non-numeric is skipped, so non-gateway providers get nothing.
- */
-function readGatewayCost(
-  providerMetadata: Readonly<Record<string, unknown>>,
-): Record<string, string | number> | undefined {
-  const gateway = providerMetadata.gateway;
-  if (!isRecord(gateway)) return undefined;
-  const attributes: Record<string, string | number> = {};
-  const cost = readUsd(gateway.cost);
-  if (cost !== undefined) attributes["gen_ai.usage.cost"] = cost;
-  const gatewayCost = readUsd(gateway.gatewayCost);
-  if (gatewayCost !== undefined) attributes["gen_ai.usage.gateway_cost"] = gatewayCost;
-  const inputCost = readUsd(gateway.inputInferenceCost);
-  if (inputCost !== undefined) attributes["gen_ai.usage.input_cost"] = inputCost;
-  const outputCost = readUsd(gateway.outputInferenceCost);
-  if (outputCost !== undefined) attributes["gen_ai.usage.output_cost"] = outputCost;
-  if (typeof gateway.generationId === "string" && gateway.generationId.length > 0) {
-    attributes["gen_ai.generation.id"] = gateway.generationId;
-  }
-  return Object.keys(attributes).length === 0 ? undefined : attributes;
-}
-
-function readUsd(value: unknown): number | undefined {
-  if (typeof value !== "string") return undefined;
-  const parsed = Number(value);
-  return Number.isFinite(parsed) ? parsed : undefined;
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
 function modelSpanName(modelId: string): string {
   return `chat ${modelId}`;
 }
 
 function agentSpanName(agentName: string | undefined): string {
   return agentName === undefined ? "invoke_agent" : `invoke_agent ${agentName}`;
-}
-
-function setAgentInvocationUsage(span: Span, modelUsage: AgentTurnTraceState["modelUsage"]): void {
-  if (modelUsage === undefined) return;
-  if (modelUsage.inputTokens !== undefined) {
-    span.setAttribute("gen_ai.usage.input_tokens", modelUsage.inputTokens);
-  }
-  if (modelUsage.outputTokens !== undefined) {
-    span.setAttribute("gen_ai.usage.output_tokens", modelUsage.outputTokens);
-  }
 }
 
 function errorText(error: unknown): unknown {

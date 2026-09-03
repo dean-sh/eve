@@ -45,7 +45,7 @@ import {
 } from "#execution/durable-session-store.js";
 import { hydrateDurableSession } from "#execution/session.js";
 import { buildSubagentRunInput } from "#subagents/tool.js";
-import { readSessionTraceContext } from "#tracing/agent-trace-context-store.js";
+import { readTurnTraceContext } from "#tracing/agent-trace-context-store.js";
 import { resolveEffectiveAgentRuntime } from "#execution/effective-agent-config.js";
 import { isTaskControlAction } from "#execution/tasks/parent/dispatch.js";
 
@@ -226,7 +226,11 @@ export async function prepareActionDispatch<PlanEntry>(input: {
     initiatorAuth: ctx.get(InitiatorAuthKey) ?? null,
     localDevRequest: ctx.get(LocalDevRequestKey),
     parentSession: ctx.get(ParentSessionKey),
-    parentTraceContext: readSessionTraceContext(input.serializedContext, session.sessionId),
+    parentTraceContext: readTurnTraceContext(
+      input.serializedContext,
+      session.sessionId,
+      batch.event.turnId,
+    ),
     plan,
     activityObserver: resolvePreparedActivity(
       ctx.get(ActivityObserverKey),
