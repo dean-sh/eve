@@ -446,6 +446,7 @@ describe("createWorkflowRuntime#createSession", () => {
       buildRuntime(compiledArtifactsSource).createSession({
         adapter,
         auth: null,
+        continuationToken: "operation-token",
         input: { message: "hello" },
         mode: "conversation",
       }),

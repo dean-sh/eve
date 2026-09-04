@@ -50,7 +50,6 @@ import {
   getTurnUsageState,
   setTurnUsageState,
 } from "#harness/turn-tag-state.js";
-import { recordActionChildTraceId } from "#tracing/agent-trace-context-store.js";
 
 export type AgentInvocationDispatchResult =
   | {
@@ -258,15 +257,6 @@ export async function dispatchAgentInvocation(input: {
   }
 
   if (outcome.kind === "error") {
-    if (outcome.childTraceId !== undefined) {
-      serializedContext = recordActionChildTraceId(
-        serializedContext,
-        prepared.session.sessionId,
-        prepared.batch.event.turnId,
-        entry.kind === "resume" ? entry.action.callId : entry.target.action.callId,
-        outcome.childTraceId,
-      );
-    }
     return {
       kind: "failed",
       result: outcome.result,
@@ -274,16 +264,6 @@ export async function dispatchAgentInvocation(input: {
       sessionState: sessionState(),
     };
   }
-  if (outcome.address.traceId !== undefined) {
-    serializedContext = recordActionChildTraceId(
-      serializedContext,
-      prepared.session.sessionId,
-      prepared.batch.event.turnId,
-      entry.kind === "resume" ? entry.action.callId : entry.target.action.callId,
-      outcome.address.traceId,
-    );
-  }
-
   const action = entry.kind === "resume" ? entry.action : entry.target.action;
   const dynamicRemoteAgent =
     entry.kind === "resume"

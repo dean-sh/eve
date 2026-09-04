@@ -104,8 +104,8 @@ export interface EveChannelInput {
    * A permissive predicate lets any authenticated forwarder assert any
    * principal, delegated lineage, and public trace audience.
    *
-   * Delegated lineage and child trace coordinates are accepted only from a
-   * trusted forwarder. When a trusted forwarder's principal assertion is accepted on session
+   * Delegated lineage is accepted only from a trusted forwarder. When a trusted
+   * forwarder's principal assertion is accepted on session
    * creation, the
    * forwarded principal replaces `session.auth.current` and
    * `session.auth.initiator`. On continuation, only `session.auth.current`

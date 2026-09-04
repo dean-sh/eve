@@ -11,7 +11,6 @@ import type {
 import { normalizeChannelAudience } from "#shared/channel-audience.js";
 import {
   applyLiveDeliveryAudienceCeiling,
-  decisionToTraceContentCeiling,
   readForwardedTraceAssertion,
 } from "#shared/forwarded-trace-policy.js";
 import type { DispatchOutcome, RuntimeSession } from "#subagents/handle-dispatch.js";
@@ -19,7 +18,6 @@ import { startLocalSubagent } from "#subagents/start-local.js";
 import { startRemoteSubagent } from "#subagents/start-remote.js";
 import { buildSubagentRunInput, type SubagentInputSource } from "#subagents/tool.js";
 import { readActionTraceContext } from "#tracing/agent-trace-context-store.js";
-import { allocateChildSessionTraceSeed } from "#tracing/agent-child-trace-seed.js";
 
 export type SubagentStartTarget =
   | {
@@ -90,39 +88,7 @@ export async function startSubagent(input: {
             forwardedTracePolicy,
           ),
         };
-  const decisionCeiling = decisionToTraceContentCeiling(parentTraceContext?.decision);
-  const ceiling =
-    decisionCeiling === undefined
-      ? forwardedTracePolicy?.ceiling
-      : forwardedTracePolicy === undefined
-        ? decisionCeiling
-        : {
-            recordInputs: decisionCeiling.recordInputs && forwardedTracePolicy.ceiling.recordInputs,
-            recordOutputs:
-              decisionCeiling.recordOutputs && forwardedTracePolicy.ceiling.recordOutputs,
-          };
-  const traceSeed =
-    actionCallId === undefined
-      ? undefined
-      : allocateChildSessionTraceSeed({
-          callId: actionCallId,
-          forwardedTracePolicy:
-            ceiling === undefined
-              ? undefined
-              : {
-                  ceiling,
-                  originAudience: forwardedTracePolicy?.originAudience ?? liveAudience ?? "unknown",
-                },
-          parentTraceContext,
-          sessionId: input.session.sessionId,
-          turnId: input.batchEvent.turnId,
-        });
-  const callerTraceContext =
-    actionCallId === undefined
-      ? parentTraceContext
-      : actionTraceContext === undefined
-        ? undefined
-        : parentTraceContext;
+  const callerTraceContext = actionCallId === undefined ? parentTraceContext : actionTraceContext;
 
   switch (input.target.kind) {
     case "local":
@@ -140,7 +106,6 @@ export async function startSubagent(input: {
         localDevRequest: input.localDevRequest,
         parentContinuationToken: input.parentContinuationToken,
         parentTraceContext: callerTraceContext,
-        traceSeed,
         activityObserver: input.activityObserver,
         sandboxSessionId: input.sandboxSessionId,
         session: input.session,
@@ -160,7 +125,6 @@ export async function startSubagent(input: {
         initiatorAuth: input.initiatorAuth,
         parentContinuationToken: input.parentContinuationToken,
         parentTraceContext: callerTraceContext,
-        traceSeed,
         activityObserver: input.activityObserver,
         session: input.session,
         taskId: input.taskId,

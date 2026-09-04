@@ -8,11 +8,7 @@ import type {
   SessionParent,
   TurnPolicy,
 } from "#channel/types.js";
-import type { AgentInvocationTrace } from "#protocol/agent-invocation-trace.js";
-import {
-  agentInvocationTraceSchema,
-  sessionParentSchema,
-} from "#protocol/agent-invocation-trace-validation.js";
+import { sessionParentSchema } from "#protocol/agent-invocation-trace-validation.js";
 import type { Session } from "#channel/session.js";
 import { parseSessionCallback } from "#channel/session-callback.js";
 import {
@@ -48,7 +44,6 @@ interface ParsedCreateBody {
   operationId?: string;
   outputSchema?: JsonObject;
   invocation?: SessionParent;
-  trace?: AgentInvocationTrace;
 }
 
 /** Replay-stable identity for one authenticated create operation. */
@@ -104,8 +99,6 @@ export function parseCreateBody(payload: Record<string, unknown>): ParsedCreateB
   if (outputSchema instanceof Response) return outputSchema;
   const invocation = parseInvocationField(payload.invocation);
   if (invocation instanceof Response) return invocation;
-  const trace = parseInvocationTraceField(payload.trace);
-  if (trace instanceof Response) return trace;
 
   if (message === undefined) {
     return Response.json(
@@ -131,16 +124,9 @@ export function parseCreateBody(payload: Record<string, unknown>): ParsedCreateB
     invocation,
     context,
     outputSchema,
-    trace,
   };
   if (typeof rawOperationId === "string") result.operationId = rawOperationId;
   return result;
-}
-
-function parseInvocationTraceField(value: unknown): ParsedCreateBody["trace"] | Response {
-  if (value === undefined) return undefined;
-  const parsed = agentInvocationTraceSchema.safeParse(value);
-  return parsed.success ? parsed.data : invalidCreateField("trace");
 }
 
 function parseInvocationField(value: unknown): SessionParent | undefined | Response {

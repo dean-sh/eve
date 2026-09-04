@@ -39,7 +39,6 @@ export interface AgentActionTraceState {
   readonly attemptIndex: number;
   readonly callId: string;
   readonly channelAudience?: ChannelAudience;
-  readonly childTraceId?: string;
   readonly inputAttribute?: string;
   readonly kind: InstrumentationActionKind;
   readonly name: string;

@@ -2,4 +2,4 @@
 "eve": patch
 ---
 
-Give each delegated local or remote agent session its own replay-stable OpenTelemetry trace. Receivers accept parent lineage only from configured trusted forwarders; otherwise compatible senders retry as capped root sessions without linked trace metadata.
+Authorize delegated agent lineage only from configured trusted forwarders. Rejected lineage falls back to a capped root session while ordinary trace context continues through standard propagation.

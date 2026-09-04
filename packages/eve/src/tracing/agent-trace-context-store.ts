@@ -103,31 +103,6 @@ export function readActionTraceContext(
   );
 }
 
-export function recordActionChildTraceId(
-  serializedContext: Record<string, unknown>,
-  sessionId: string,
-  turnId: string,
-  callId: string,
-  childTraceId: string,
-): Record<string, unknown> {
-  const raw = serializedContext[AgentTraceContextKey.name];
-  if (raw === undefined) return serializedContext;
-  const state = deserializeState(raw);
-  const entry = Object.entries(state.actions).find(
-    ([, action]) =>
-      action.sessionId === sessionId && action.turnId === turnId && action.callId === callId,
-  );
-  if (entry === undefined) return serializedContext;
-  const [key, action] = entry;
-  return {
-    ...serializedContext,
-    [AgentTraceContextKey.name]: serializeState({
-      ...state,
-      actions: { ...state.actions, [key]: { ...action, childTraceId } },
-    }),
-  };
-}
-
 function withTraceDecision(
   serializedContext: Readonly<Record<string, unknown>>,
   context: SpanContext,
@@ -355,12 +330,6 @@ function deserializeAction(value: unknown): AgentActionTraceState | undefined {
     attemptIndex: value.attemptIndex,
     callId: value.callId,
     channelAudience: normalizeChannelAudience(value.channelAudience),
-    childTraceId:
-      typeof value.childTraceId === "string" &&
-      /^[0-9a-f]{32}$/u.test(value.childTraceId) &&
-      !/^0+$/u.test(value.childTraceId)
-        ? value.childTraceId
-        : undefined,
     inputAttribute: typeof value.inputAttribute === "string" ? value.inputAttribute : undefined,
     kind: value.kind,
     name: value.name,

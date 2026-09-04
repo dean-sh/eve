@@ -29,7 +29,6 @@ export async function startRemoteSubagent(input: {
   readonly initiatorAuth: Parameters<typeof startRemoteAgentSession>[0]["initiatorAuth"];
   readonly parentContinuationToken: string | undefined;
   readonly parentTraceContext: Parameters<typeof startRemoteAgentSession>[0]["parentTraceContext"];
-  readonly traceSeed: Parameters<typeof startRemoteAgentSession>[0]["traceSeed"];
   readonly activityObserver?: Parameters<typeof startRemoteAgentSession>[0]["activityObserver"];
   readonly session: RuntimeSession;
   readonly taskId?: string;
@@ -106,23 +105,14 @@ export async function startRemoteSubagent(input: {
       remote: resolvedRemote,
       session: input.session,
       taskId: input.taskId,
-      traceSeed: input.traceSeed,
     });
-    const address: {
-      callbackBaseUrl: string;
-      credentialResolver: typeof credentialResolver;
-      kind: "agent/remote";
-      sessionId: string;
-      traceId?: string;
-      url: string;
-    } = {
+    const address = {
       callbackBaseUrl,
       credentialResolver,
       kind: "agent/remote",
       sessionId: child.sessionId,
       url: resolvedRemote.url,
-    };
-    if (child.traceId !== undefined) address.traceId = child.traceId;
+    } as const;
     return {
       address,
       callId: action.callId,

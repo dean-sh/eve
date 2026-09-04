@@ -64,7 +64,6 @@ export type DispatchOutcome =
       readonly toolName: string;
     }
   | {
-      readonly childTraceId?: string;
       readonly deliveryAmbiguous?: boolean;
       readonly deliveryPermanent?: boolean;
       readonly kind: "error";
@@ -117,7 +116,6 @@ async function dispatchToAgentAddress(input: {
       subagentName: handle.identity.name,
     });
     return {
-      childTraceId: handle.address.traceId,
       deliveryAmbiguous: delivery.error.deliveryAmbiguous,
       deliveryPermanent: permanent,
       kind: "error",

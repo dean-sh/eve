@@ -264,10 +264,6 @@ export function actionIdempotencyKey(sessionId: string, turnId: string, callId: 
   return `action:${sessionId}:${turnId}:${callId}`;
 }
 
-export function childSessionTraceKey(sessionId: string, turnId: string, callId: string): string {
-  return `child-session:${sessionId}:${turnId}:${callId}`;
-}
-
 export interface InstrumentationStepAttemptStartedEvent {
   readonly type: "step.attempt.started";
   readonly idempotencyKey: string;

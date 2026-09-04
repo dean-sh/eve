@@ -2,12 +2,10 @@ import { describe, expect, it, vi } from "vitest";
 
 import type { RouteHandlerArgs } from "#channel/routes.js";
 import type { Session } from "#channel/session.js";
-import { attachAcceptedTraceCoordinates } from "#channel/session-trace-state.js";
 import { attachRouteSessionCreator } from "#internal/nitro/routes/channel-route-context.js";
 import { mockChannelContext } from "#internal/testing/mocks/mock-channel-operations.js";
 import { none } from "#public/channels/auth.js";
 import { eveChannel } from "#public/channels/eve.js";
-import { AGENT_INVOCATION_TRACE_WIRE_VERSION } from "#protocol/agent-invocation-trace.js";
 
 function route(
   method: "GET" | "POST",
@@ -135,16 +133,11 @@ describe("eve ID-addressed session routes", () => {
     );
   });
 
-  it("accepts a distinct delegated trace and acknowledges its coordinates", async () => {
-    const seed = { spanId: "4".repeat(16), traceFlags: 1, traceId: "3".repeat(32) };
-    const createSession = vi
-      .fn()
-      .mockImplementation(async (input) =>
-        attachAcceptedTraceCoordinates(
-          { events: new ReadableStream(), sessionId: "wrun_A" },
-          input.acceptedTraceCoordinates,
-        ),
-      );
+  it("accepts trusted delegated lineage and continues traceparent", async () => {
+    const createSession = vi.fn().mockResolvedValue({
+      events: new ReadableStream(),
+      sessionId: "wrun_A",
+    });
     const args = attachRouteSessionCreator(createArgs(), createSession);
     const invocation = {
       callId: "call-1",
@@ -167,24 +160,22 @@ describe("eve ID-addressed session routes", () => {
           },
           invocation,
           message: "hello",
-          trace: {
-            parent: {
-              spanId: "2".repeat(16),
-              traceFlags: 1,
-              traceId: "1".repeat(32),
-            },
-            seed,
-            version: AGENT_INVOCATION_TRACE_WIRE_VERSION,
-          },
         }),
-        headers: { "content-type": "application/json" },
+        headers: {
+          "content-type": "application/json",
+          traceparent: `00-${"1".repeat(32)}-${"2".repeat(16)}-01`,
+        },
         method: "POST",
       }),
       args,
     );
 
     expect(response.status).toBe(202);
-    await expect(response.json()).resolves.toMatchObject({ sessionId: "wrun_A", trace: seed });
+    await expect(response.json()).resolves.toEqual({
+      ok: true,
+      sessionId: "wrun_A",
+      status: "accepted",
+    });
     expect(createSession).toHaveBeenCalledWith(
       expect.objectContaining({
         parent: invocation,
@@ -194,14 +185,12 @@ describe("eve ID-addressed session routes", () => {
           traceFlags: 1,
           traceId: "1".repeat(32),
         },
-        traceSeed: seed,
       }),
     );
   });
 
-  it("re-acknowledges only an exact replay of accepted trace coordinates", async () => {
-    const seed = { spanId: "4".repeat(16), traceFlags: 1, traceId: "3".repeat(32) };
-    const owner = attachAcceptedTraceCoordinates(createFixedSession({ id: "wrun_A" }), seed);
+  it("replays an accepted create operation without creating another session", async () => {
+    const owner = createFixedSession({ id: "wrun_A" });
     const createSession = vi.fn();
     const args = attachRouteSessionCreator(
       {
@@ -219,7 +208,7 @@ describe("eve ID-addressed session routes", () => {
       }),
       trustedForwarders: () => true,
     });
-    const request = (traceSeed: typeof seed) =>
+    const response = await handler(
       new Request("https://eve.test/eve/v1/session", {
         body: JSON.stringify({
           callback: {
@@ -236,26 +225,18 @@ describe("eve ID-addressed session routes", () => {
           },
           message: "hello",
           operationId: "operation-1",
-          trace: {
-            seed: traceSeed,
-            version: AGENT_INVOCATION_TRACE_WIRE_VERSION,
-          },
         }),
         headers: { "content-type": "application/json" },
         method: "POST",
-      });
+      }),
+      args,
+    );
 
-    await expect((await handler(request(seed), args)).json()).resolves.toMatchObject({
-      trace: seed,
+    await expect(response.json()).resolves.toEqual({
+      ok: true,
+      sessionId: "wrun_A",
+      status: "accepted",
     });
-    await expect(
-      (
-        await handler(
-          request({ spanId: "6".repeat(16), traceFlags: 1, traceId: "5".repeat(32) }),
-          args,
-        )
-      ).json(),
-    ).resolves.toEqual({ ok: true, sessionId: "wrun_A", status: "accepted" });
     expect(createSession).not.toHaveBeenCalled();
   });
 
@@ -287,14 +268,6 @@ describe("eve ID-addressed session routes", () => {
           },
           message: "hello",
           operationId: "operation-1",
-          trace: {
-            seed: {
-              spanId: "4".repeat(16),
-              traceFlags: 1,
-              traceId: "3".repeat(32),
-            },
-            version: AGENT_INVOCATION_TRACE_WIRE_VERSION,
-          },
         }),
         headers: { "content-type": "application/json" },
         method: "POST",
@@ -375,14 +348,6 @@ describe("eve ID-addressed session routes", () => {
             turn: { id: "parent-turn", sequence: 1 },
           },
           message: "hello",
-          trace: {
-            seed: {
-              spanId: "4".repeat(16),
-              traceFlags: 1,
-              traceId: "3".repeat(32),
-            },
-            version: AGENT_INVOCATION_TRACE_WIRE_VERSION,
-          },
         }),
         headers: { "content-type": "application/json" },
         method: "POST",

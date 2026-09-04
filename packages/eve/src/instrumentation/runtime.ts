@@ -525,12 +525,11 @@ export function initializeSessionInstrumentation(input: {
   readonly agentName: string;
   readonly ctx: ContextContainer;
   readonly parentTraceContext?: SessionTraceContext;
-  readonly traceSeed?: SessionTraceSeed;
 }): void {
   const runtime = getInstrumentationRuntime();
   const channel = input.ctx.get(ChannelInstrumentationKey);
   const forwardedTracePolicy = readForwardedTraceAssertion(
-    input.traceSeed?.forwardedTracePolicy ?? input.parentTraceContext?.forwardedTracePolicy,
+    input.parentTraceContext?.forwardedTracePolicy,
   );
   const audience =
     forwardedTracePolicy?.originAudience ?? normalizeChannelAudience(channel?.metadata.audience);
@@ -541,7 +540,6 @@ export function initializeSessionInstrumentation(input: {
     forwardedTracePolicy,
     parentTraceContext: input.parentTraceContext,
     runtime,
-    seed: input.traceSeed,
   });
   if (traceSeed !== undefined) {
     input.ctx.set(SessionTraceSeedKey, traceSeed);
@@ -556,10 +554,7 @@ export function initializeSessionInstrumentation(input: {
       });
     }
     if (forwardedTracePolicy !== undefined && input.parentTraceContext !== undefined) {
-      const parentTraceContext =
-        input.traceSeed === undefined
-          ? { ...input.parentTraceContext, ...traceSeed }
-          : { ...input.parentTraceContext, decision: traceSeed.decision };
+      const parentTraceContext = { ...input.parentTraceContext, ...traceSeed };
       delete parentTraceContext.forwardedTracePolicy;
       input.ctx.set(ParentTraceContextKey, parentTraceContext);
     }
@@ -574,7 +569,6 @@ function allocateSessionTraceSeed(input: {
   readonly forwardedTracePolicy: ForwardedTraceAssertion | undefined;
   readonly parentTraceContext?: SessionTraceContext;
   readonly runtime: InstrumentationRuntime | undefined;
-  readonly seed?: SessionTraceSeed;
 }): SessionTraceSeed | undefined {
   const localDecision = () =>
     resolveTracePolicy(input.runtime?.otelSettings?.tracePolicy, {
@@ -582,24 +576,6 @@ function allocateSessionTraceSeed(input: {
       audience: input.audience,
       channelType: input.channelType,
     });
-  if (input.seed !== undefined) {
-    const decision =
-      input.forwardedTracePolicy === undefined
-        ? localDecision()
-        : intersectInstrumentationDecisions(
-            localDecision(),
-            traceContentCeilingToDecision(input.forwardedTracePolicy.ceiling),
-          );
-    const sampled =
-      decision.action === "record" && (input.runtime?.samplesTrace?.(input.seed.traceId) ?? true);
-    return {
-      decision,
-      forwardedTracePolicy: input.forwardedTracePolicy,
-      spanId: input.seed.spanId,
-      traceFlags: sampled ? input.seed.traceFlags | 1 : input.seed.traceFlags & ~1,
-      traceId: input.seed.traceId,
-    };
-  }
   if (input.parentTraceContext !== undefined) {
     const forwardedCeiling = input.forwardedTracePolicy
       ? traceContentCeilingToDecision(input.forwardedTracePolicy.ceiling)

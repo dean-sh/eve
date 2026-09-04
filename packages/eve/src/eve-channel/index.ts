@@ -1,6 +1,5 @@
-import type { SessionAuthContext } from "#channel/types.js";
+import type { RunInput, SessionAuthContext } from "#channel/types.js";
 import type { Session } from "#channel/session.js";
-import { readAcceptedTraceCoordinates } from "#channel/session-trace-state.js";
 import {
   authorizeTrustedForwarder,
   resolveForwardedPrincipal,
@@ -54,11 +53,7 @@ import type { CompactResponse } from "#protocol/compact-session.js";
 import type { ResetResponse } from "#protocol/reset-session.js";
 import { parseTraceparent } from "#protocol/traceparent.js";
 import { readForwardedAudienceBaggage } from "#protocol/baggage.js";
-import {
-  traceCoordinatesEqual,
-  type TraceCoordinates,
-  validateAgentInvocationBinding,
-} from "#protocol/agent-invocation-trace.js";
+import { validateAgentInvocationBinding } from "#protocol/agent-invocation-trace.js";
 import {
   FAIL_CLOSED_FORWARDED_TRACE_ASSERTION,
   formatTraceContentCeiling,
@@ -89,27 +84,22 @@ import {
   resolveOnMessage,
 } from "#eve-channel/support.js";
 import type { EveChannel, EveChannelInput, EveEventContext } from "#eve-channel/types.js";
-import type { InternalRunInput } from "#execution/internal-run-input.js";
 
 export * from "#eve-channel/types.js";
 
 const log = createLogger("eve.channel");
 
-function acceptedSessionResponse(sessionId: string, traceContext?: TraceCoordinates): Response {
-  const body: {
-    ok: true;
-    sessionId: string;
-    status: "accepted";
-    trace?: TraceCoordinates;
-  } = { ok: true, sessionId, status: "accepted" };
-  if (traceContext !== undefined) body.trace = traceContext;
-  return Response.json(body, {
-    headers: {
-      "cache-control": "no-store",
-      [EVE_SESSION_ID_HEADER]: sessionId,
+function acceptedSessionResponse(sessionId: string): Response {
+  return Response.json(
+    { ok: true, sessionId, status: "accepted" },
+    {
+      headers: {
+        "cache-control": "no-store",
+        [EVE_SESSION_ID_HEADER]: sessionId,
+      },
+      status: 202,
     },
-    status: 202,
-  });
+  );
 }
 
 /**
@@ -177,15 +167,13 @@ export function eveChannel(input: EveChannelInput): EveChannel {
 
         const body = parseCreateBody(payload);
         if (body instanceof Response) return body;
-        const legacyParentTraceContext =
+        const parsedParentTraceContext =
           body.callback === undefined
             ? undefined
             : parseTraceparent(req.headers.get("traceparent"));
         const invocationBindingError = validateAgentInvocationBinding({
           callbackCallId: body.callback?.callId,
           invocation: body.invocation,
-          trace: body.trace,
-          traceparent: legacyParentTraceContext,
         });
         if (invocationBindingError === "call-id-mismatch") {
           return Response.json(
@@ -193,13 +181,7 @@ export function eveChannel(input: EveChannelInput): EveChannel {
             { status: 400 },
           );
         }
-        if (invocationBindingError === "trace-context-mismatch") {
-          return Response.json(
-            { error: "Invocation trace context does not match traceparent.", ok: false },
-            { status: 400 },
-          );
-        }
-        if (!forwarded.accepted && (body.invocation !== undefined || body.trace !== undefined)) {
+        if (!forwarded.accepted && body.invocation !== undefined) {
           const authorized = await authorizeTrustedForwarder({
             assertion: "agent-invocation",
             forwarder: authResult,
@@ -207,18 +189,6 @@ export function eveChannel(input: EveChannelInput): EveChannel {
           });
           if (authorized instanceof Response) return authorized;
         }
-        const parsedParentTraceContext =
-          body.trace?.parent === undefined
-            ? body.trace === undefined
-              ? legacyParentTraceContext
-              : undefined
-            : {
-                isRemote: true,
-                spanId: body.trace.parent.spanId,
-                traceFlags: body.trace.parent.traceFlags,
-                traceId: body.trace.parent.traceId,
-              };
-
         const policyRejection = checkUploadPolicy(body, uploadPolicy);
         if (policyRejection !== null) return policyRejection;
 
@@ -238,14 +208,7 @@ export function eveChannel(input: EveChannelInput): EveChannel {
         if (operationToken !== undefined) {
           const owner = await args.resolveSession(operationToken);
           if (owner !== undefined) {
-            const acceptedTraceCoordinates = readAcceptedTraceCoordinates(owner);
-            const replayedTraceCoordinates =
-              body.trace !== undefined &&
-              acceptedTraceCoordinates !== undefined &&
-              traceCoordinatesEqual(body.trace.seed, acceptedTraceCoordinates)
-                ? acceptedTraceCoordinates
-                : undefined;
-            return acceptedSessionResponse(owner.id, replayedTraceCoordinates);
+            return acceptedSessionResponse(owner.id);
           }
         }
 
@@ -253,20 +216,17 @@ export function eveChannel(input: EveChannelInput): EveChannel {
           parsedParentTraceContext === undefined
             ? "absent"
             : readForwardedAudienceBaggage(req.headers.get("baggage"));
-        const acceptsLegacyPolicy =
+        const acceptsForwardedTracePolicy =
           forwarded.accepted &&
           parsedParentTraceContext !== undefined &&
           (parsedParentTraceContext.traceFlags & 1) === 1;
-        const acceptedForwardedTracePolicy =
-          forwarded.accepted && body.trace?.forwardedTracePolicy !== undefined
-            ? body.trace.forwardedTracePolicy
-            : !acceptsLegacyPolicy
-              ? undefined
-              : typeof forwardedTraceAssertion === "object"
-                ? forwardedTraceAssertion
-                : forwardedTraceAssertion === "malformed"
-                  ? FAIL_CLOSED_FORWARDED_TRACE_ASSERTION
-                  : undefined;
+        const acceptedForwardedTracePolicy = !acceptsForwardedTracePolicy
+          ? undefined
+          : typeof forwardedTraceAssertion === "object"
+            ? forwardedTraceAssertion
+            : forwardedTraceAssertion === "malformed"
+              ? FAIL_CLOSED_FORWARDED_TRACE_ASSERTION
+              : undefined;
         const parentTraceContext =
           acceptedForwardedTracePolicy === undefined || parsedParentTraceContext === undefined
             ? parsedParentTraceContext
@@ -286,12 +246,9 @@ export function eveChannel(input: EveChannelInput): EveChannel {
               forwarder: authResult.principalId,
             });
           } else {
-            log.warn(
-              "ignoring legacy forwarded trace policy without an accepted sampled principal",
-              {
-                forwarder: authResult.principalId,
-              },
-            );
+            log.warn("ignoring forwarded trace policy without an accepted sampled principal", {
+              forwarder: authResult.principalId,
+            });
           }
         }
 
@@ -313,9 +270,10 @@ export function eveChannel(input: EveChannelInput): EveChannel {
         let handle: Awaited<ReturnType<typeof createSession>>;
         try {
           const createInput: {
-            -readonly [
-              K in keyof Omit<InternalRunInput, "adapter" | "channelName" | "requestId">
-            ]: Omit<InternalRunInput, "adapter" | "channelName" | "requestId">[K];
+            -readonly [K in keyof Omit<RunInput, "adapter" | "channelName" | "requestId">]: Omit<
+              RunInput,
+              "adapter" | "channelName" | "requestId"
+            >[K];
           } = {
             activityObserver: body.activityObserver,
             auth: messageResult.auth,
@@ -337,16 +295,6 @@ export function eveChannel(input: EveChannelInput): EveChannel {
             parentTraceContext,
             title: messageResult.title,
           };
-          if (body.trace !== undefined) {
-            createInput.acceptedTraceCoordinates = body.trace.seed;
-            createInput.traceSeed =
-              acceptedForwardedTracePolicy === undefined
-                ? body.trace.seed
-                : {
-                    ...body.trace.seed,
-                    forwardedTracePolicy: acceptedForwardedTracePolicy,
-                  };
-          }
           handle = await createSession(createInput);
         } catch (error) {
           const errorId = logError(log, "session-create request failed", error);
@@ -356,7 +304,7 @@ export function eveChannel(input: EveChannelInput): EveChannel {
           );
         }
 
-        return acceptedSessionResponse(handle.sessionId, readAcceptedTraceCoordinates(handle));
+        return acceptedSessionResponse(handle.sessionId);
       }),
 
       POST(EVE_SESSION_ROUTE_PATTERN, async (req, { attachSession, params }) => {

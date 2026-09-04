@@ -32,7 +32,6 @@ export interface SubagentAdapterState extends Record<string, unknown> {
   readonly subagentName: string;
   /** Owning task when this child was started by a background workflow tool. */
   readonly taskId?: string;
-  readonly traceId?: string;
 }
 
 /**
@@ -57,8 +56,6 @@ export function isSubagentAdapterState(value: unknown): value is SubagentAdapter
     typeof state.parentSessionId === "string" &&
     typeof state.subagentName === "string" &&
     state.subagentName.length > 0 &&
-    (state.taskId === undefined || (typeof state.taskId === "string" && state.taskId.length > 0)) &&
-    (state.traceId === undefined ||
-      (/^[0-9a-f]{32}$/u.test(state.traceId) && !/^0+$/u.test(state.traceId)))
+    (state.taskId === undefined || (typeof state.taskId === "string" && state.taskId.length > 0))
   );
 }

@@ -201,31 +201,18 @@ describe("startRemoteAgentSession", () => {
     });
   });
 
-  it("returns a child trace id only for an exact acknowledgement", async () => {
-    const traceSeed = {
-      spanId: "4".repeat(16),
-      traceFlags: 1,
-      traceId: "3".repeat(32),
-    };
-    const fetchMock = vi
-      .fn()
-      .mockResolvedValueOnce(
-        Response.json(
-          { ok: true, sessionId: "accepted-child", status: "accepted", trace: traceSeed },
-          { status: 202 },
-        ),
-      )
-      .mockResolvedValueOnce(
-        Response.json(
-          {
-            ok: true,
-            sessionId: "mismatched-child",
-            status: "accepted",
-            trace: { ...traceSeed, spanId: "5".repeat(16) },
-          },
-          { status: 202 },
-        ),
-      );
+  it("propagates the caller traceparent without a request trace extension", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      Response.json(
+        {
+          ok: true,
+          sessionId: "accepted-child",
+          status: "accepted",
+          trace: { spanId: "4".repeat(16), traceFlags: 1, traceId: "3".repeat(32) },
+        },
+        { status: 202 },
+      ),
+    );
     vi.stubGlobal("fetch", fetchMock);
     const input = {
       action: createAction(),
@@ -250,27 +237,22 @@ describe("startRemoteAgentSession", () => {
         sessionId: "parent-session",
         state: {},
       },
-      traceSeed,
     };
 
-    await expect(startRemoteAgentSession(input)).resolves.toEqual({
-      sessionId: "accepted-child",
-      traceId: traceSeed.traceId,
+    await expect(startRemoteAgentSession(input)).resolves.toEqual({ sessionId: "accepted-child" });
+    expect(JSON.parse(fetchMock.mock.calls[0]?.[1]?.body as string)).not.toHaveProperty("trace");
+    expect(fetchMock.mock.calls[0]?.[1]?.headers).toMatchObject({
+      traceparent: `00-${"1".repeat(32)}-${"2".repeat(16)}-01`,
     });
-    await expect(startRemoteAgentSession(input)).resolves.toEqual({
-      sessionId: "mismatched-child",
-    });
-    expect(fetchMock.mock.calls[0]?.[1]?.headers).not.toHaveProperty("traceparent");
   });
 
-  it("falls back for a strict older receiver without joining the parent trace", async () => {
+  it("does not retry an unrelated bad request", async () => {
     const fetchMock = vi
       .fn()
-      .mockResolvedValueOnce(Response.json({ ok: false }, { status: 400 }))
-      .mockResolvedValueOnce(
+      .mockResolvedValue(
         Response.json(
-          { ok: true, sessionId: "remote-session", status: "accepted" },
-          { status: 202 },
+          { error: "Invocation trace context does not match traceparent.", ok: false },
+          { status: 400 },
         ),
       );
     vi.stubGlobal("fetch", fetchMock);
@@ -299,22 +281,14 @@ describe("startRemoteAgentSession", () => {
           sessionId: "parent-session",
           state: {},
         },
-        traceSeed: {
-          spanId: "4".repeat(16),
-          traceFlags: 1,
-          traceId: "3".repeat(32),
-        },
       }),
-    ).resolves.toEqual({ sessionId: "remote-session" });
+    ).rejects.toThrow("HTTP 400");
 
-    expect(fetchMock).toHaveBeenCalledTimes(2);
-    expect(JSON.parse(fetchMock.mock.calls[0]?.[1]?.body as string)).toHaveProperty("trace");
-    expect(JSON.parse(fetchMock.mock.calls[1]?.[1]?.body as string)).not.toHaveProperty("trace");
-    expect(JSON.parse(fetchMock.mock.calls[1]?.[1]?.body as string)).not.toHaveProperty(
-      "invocation",
-    );
-    expect(fetchMock.mock.calls[0]?.[1]?.headers).not.toHaveProperty("traceparent");
-    expect(fetchMock.mock.calls[1]?.[1]?.headers).not.toHaveProperty("traceparent");
+    expect(fetchMock).toHaveBeenCalledOnce();
+    expect(JSON.parse(fetchMock.mock.calls[0]?.[1]?.body as string)).not.toHaveProperty("trace");
+    expect(fetchMock.mock.calls[0]?.[1]?.headers).toMatchObject({
+      traceparent: `00-${"1".repeat(32)}-${"2".repeat(16)}-01`,
+    });
   });
 
   it("falls back to a capped root when the receiver does not trust delegated lineage", async () => {
@@ -348,6 +322,11 @@ describe("startRemoteAgentSession", () => {
           sessionId: "parent-session",
           turn: { id: "parent-turn", sequence: 0 },
         },
+        parentTraceContext: {
+          spanId: "2".repeat(16),
+          traceFlags: 1,
+          traceId: "1".repeat(32),
+        },
         remote: createRemoteAgent(),
         session: {
           agent: { modelReference: { id: "mock/test" }, system: "", tools: [] },
@@ -357,23 +336,23 @@ describe("startRemoteAgentSession", () => {
           sessionId: "parent-session",
           state: {},
         },
-        traceSeed: {
-          spanId: "4".repeat(16),
-          traceFlags: 1,
-          traceId: "3".repeat(32),
-        },
       }),
     ).resolves.toEqual({ sessionId: "remote-session" });
 
     expect(fetchMock).toHaveBeenCalledTimes(2);
     expect(JSON.parse(fetchMock.mock.calls[0]?.[1]?.body as string)).toMatchObject({
       invocation: { rootSessionId: "root-session" },
-      trace: { seed: { traceId: "3".repeat(32) } },
     });
+    expect(JSON.parse(fetchMock.mock.calls[0]?.[1]?.body as string)).not.toHaveProperty("trace");
     expect(JSON.parse(fetchMock.mock.calls[1]?.[1]?.body as string)).not.toHaveProperty(
       "invocation",
     );
-    expect(JSON.parse(fetchMock.mock.calls[1]?.[1]?.body as string)).not.toHaveProperty("trace");
+    expect(fetchMock.mock.calls[0]?.[1]?.headers).toMatchObject({
+      traceparent: `00-${"1".repeat(32)}-${"2".repeat(16)}-01`,
+    });
+    expect(fetchMock.mock.calls[1]?.[1]?.headers).toMatchObject({
+      traceparent: `00-${"1".repeat(32)}-${"2".repeat(16)}-01`,
+    });
   });
 
   it("does not retry an unrelated forbidden response", async () => {
@@ -402,11 +381,6 @@ describe("startRemoteAgentSession", () => {
           history: [],
           sessionId: "parent-session",
           state: {},
-        },
-        traceSeed: {
-          spanId: "4".repeat(16),
-          traceFlags: 1,
-          traceId: "3".repeat(32),
         },
       }),
     ).rejects.toThrow("HTTP 403");
