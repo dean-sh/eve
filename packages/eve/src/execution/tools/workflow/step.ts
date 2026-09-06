@@ -76,7 +76,7 @@ async function executeAuthorizedStep(
         if (result.authorized.includes(authorizationResults[i]!.attemptId!))
           authorizationResults.splice(i, 1);
       }
-      if (result.kind === "eve:workflow-step-result") {
+      if (result.kind === "result") {
         for (const challenge of pending.values())
           await reportAuthorization(input, challenge, "failed");
         return result.output;

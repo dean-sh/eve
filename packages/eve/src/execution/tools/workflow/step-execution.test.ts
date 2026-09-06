@@ -166,7 +166,7 @@ describe("workflow step authorization", () => {
     expect(principals.sort()).toEqual(["user-1", "user-2"]);
     expect(JSON.stringify(results)).not.toContain("secret:");
     expect(results[0]).toMatchObject({
-      kind: "eve:workflow-step-result",
+      kind: "result",
       output: { sameToken: true, session: "session-1" },
     });
   });
@@ -199,8 +199,7 @@ describe("workflow step authorization", () => {
       ctx.requireAuth(provider);
     };
     const pending = await runStep(execute);
-    if (pending.kind !== "eve:workflow-step-authorization")
-      throw new Error("Expected authorization");
+    if (pending.kind !== "authorization-required") throw new Error("Expected authorization");
     const challenge = pending.signal.challenges[0]!;
     expect(challenge.hookUrl).toContain("https://agent.example/agents/devbox/eve/v1/");
     expect(challenge.hookUrl).toContain("callback-user-1");
@@ -220,7 +219,7 @@ describe("workflow step authorization", () => {
   });
 
   it("does not turn an ordinary step result into an authorization signal", async () => {
-    const value = { kind: "eve:workflow-step-authorization" };
+    const value = { kind: "authorization-required" };
     await expect(
       withWorkflowStepAuthorization(async (input) => input)({ args: [value] }),
     ).resolves.toBe(value);

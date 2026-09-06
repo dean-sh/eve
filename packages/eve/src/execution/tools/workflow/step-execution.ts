@@ -71,8 +71,8 @@ export function withWorkflowStepAuthorization(execute: (...args: never[]) => unk
         .filter((result) => !remaining.includes(result))
         .map((result) => result.attemptId!);
       return isAuthorizationSignal(output)
-        ? { kind: "eve:workflow-step-authorization", signal: output, authorized }
-        : { kind: "eve:workflow-step-result", output, authorized };
+        ? { kind: "authorization-required", signal: output, authorized }
+        : { kind: "result", output, authorized };
     });
   };
   // The SDK reads retry policy from the registered function at execution time.

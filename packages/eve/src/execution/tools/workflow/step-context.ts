@@ -16,8 +16,8 @@ export interface WorkflowStepContext {
 }
 
 export type WorkflowStepResult = { readonly authorized: readonly string[] } & (
-  | { readonly kind: "eve:workflow-step-result"; readonly output: unknown }
-  | { readonly kind: "eve:workflow-step-authorization"; readonly signal: AuthorizationSignal }
+  | { readonly kind: "result"; readonly output: unknown }
+  | { readonly kind: "authorization-required"; readonly signal: AuthorizationSignal }
 );
 
 /** Compiler-owned envelope; authored arguments never select the auth context. */
