@@ -2,7 +2,10 @@ import { createHook, getWorkflowMetadata } from "#compiled/@workflow/core/index.
 import type { AuthorizationChallenge, AuthorizationResult } from "#harness/authorization.js";
 import type { AuthorizationCallback } from "#shared/connection-types.js";
 import type { ToolContext } from "#tools/definition.js";
-import { findWorkflowToolRunContext } from "#execution/tools/workflow/ask.js";
+import {
+  findWorkflowToolRunContext,
+  type WorkflowToolRunContext,
+} from "#execution/tools/workflow/ask.js";
 import { disposeHook } from "#execution/hook-ownership.js";
 import { resumeHookStep } from "#execution/tools/workflow/resume-hook-step.js";
 import {
@@ -44,8 +47,8 @@ async function executeAuthorizedStep(
   for (;;) {
     const callback = createHook<unknown>();
     const input: WorkflowStepContext = {
-      from: run.from,
-      owner: run.owner,
+      callId: ctx.callId,
+      toolName: ctx.toolName,
       session: ctx.session,
       abortSignal: ctx.abortSignal,
       baseUrl: getWorkflowMetadata().url,
@@ -64,12 +67,13 @@ async function executeAuthorizedStep(
       } catch (error) {
         if (!ctx.abortSignal.aborted)
           for (const challenge of pending.values())
-            await reportAuthorization(input, challenge, "failed");
+            await reportAuthorization(run, ctx.abortSignal, challenge, "failed");
         throw error;
       }
       for (const attemptId of result.authorized) {
         const challenge = pending.get(attemptId);
-        if (challenge !== undefined) await reportAuthorization(input, challenge, "authorized");
+        if (challenge !== undefined)
+          await reportAuthorization(run, ctx.abortSignal, challenge, "authorized");
         pending.delete(attemptId);
       }
       for (let i = authorizationResults.length - 1; i >= 0; i--) {
@@ -78,12 +82,12 @@ async function executeAuthorizedStep(
       }
       if (result.kind === "result") {
         for (const challenge of pending.values())
-          await reportAuthorization(input, challenge, "failed");
+          await reportAuthorization(run, ctx.abortSignal, challenge, "failed");
         return result.output;
       }
       for (const challenge of result.signal.challenges) {
         pending.set(challenge.attemptId!, challenge);
-        await reportAuthorization(input, challenge);
+        await reportAuthorization(run, ctx.abortSignal, challenge);
         try {
           const response = await waitForCallback(callback, challenge, ctx.abortSignal);
           authorizationResults.push({
@@ -97,7 +101,8 @@ async function executeAuthorizedStep(
           });
         } catch (error) {
           // Cancelled turns close their inbox; cancelled tasks discard further deliveries.
-          if (!ctx.abortSignal.aborted) await reportAuthorization(input, challenge, "failed");
+          if (!ctx.abortSignal.aborted)
+            await reportAuthorization(run, ctx.abortSignal, challenge, "failed");
           throw error;
         }
       }
@@ -108,33 +113,34 @@ async function executeAuthorizedStep(
 }
 
 async function reportAuthorization(
-  input: WorkflowStepContext,
+  run: WorkflowToolRunContext,
+  signal: AbortSignal,
   challenge: AuthorizationChallenge,
   outcome?: "authorized" | "failed",
 ): Promise<void> {
   const eventInput = {
     attemptId: challenge.attemptId,
     name: challenge.name,
-    sequence: input.from.sequence,
-    stepIndex: input.from.stepIndex,
-    turnId: input.from.turnId,
+    sequence: run.from.sequence,
+    stepIndex: run.from.stepIndex,
+    turnId: run.from.turnId,
     authorization: challenge.challenge,
   };
   const acknowledged = createHook<void>();
   try {
     await withAbort(
-      resumeHookStep(input.owner.inbox, {
+      resumeHookStep(run.owner.inbox, {
         kind: "request",
-        from: input.from,
+        from: run.from,
         replyTo: acknowledged.token,
         request: {
           kind: "authorization-request",
           stepAuthorization: true,
           event: {
             kind: "subagent-authorization-event",
-            callId: input.from.callId,
-            childSessionId: input.from.runId,
-            subagentName: input.from.toolName,
+            callId: run.from.callId,
+            childSessionId: run.from.runId,
+            subagentName: run.from.toolName,
             event:
               outcome === undefined
                 ? createAuthorizationRequiredEvent({
@@ -146,9 +152,9 @@ async function reportAuthorization(
           },
         },
       }),
-      input.abortSignal,
+      signal,
     );
-    await withAbort(acknowledged, input.abortSignal);
+    await withAbort(acknowledged, signal);
   } finally {
     await disposeHook(acknowledged);
   }

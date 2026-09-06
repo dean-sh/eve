@@ -24,7 +24,6 @@ export function withWorkflowStepAuthorization(execute: (...args: never[]) => unk
     invocation: WorkflowStepInvocation,
   ): Promise<unknown> {
     const { args, context: input } = invocation;
-    if (input === undefined) return Reflect.apply(execute, this, args);
     getStepMetadata();
     const context = new ContextContainer();
     context.set(AuthKey, input.session.auth.current);
@@ -40,13 +39,13 @@ export function withWorkflowStepAuthorization(execute: (...args: never[]) => unk
 
     return contextStorage.run(context, async (): Promise<WorkflowStepResult> => {
       const auth = createAuthorizationContext({
-        scope: input.from.toolName,
+        scope: input.toolName,
         completeAuthorization: completeWorkflowStepAuthorization,
       });
       const ctx = {
         ...buildBaseToolContext({
-          toolName: input.from.toolName,
-          options: { abortSignal: input.abortSignal, toolCallId: input.from.callId },
+          toolName: input.toolName,
+          options: { abortSignal: input.abortSignal, toolCallId: input.callId },
         }),
         getToken: auth.getToken,
         requireAuth: auth.requireAuth,
@@ -57,7 +56,7 @@ export function withWorkflowStepAuthorization(execute: (...args: never[]) => unk
           Reflect.apply(
             execute,
             this,
-            args.map((arg, index) => (invocation.contextIndexes?.includes(index) ? ctx : arg)),
+            args.map((arg, index) => (invocation.contextIndexes.includes(index) ? ctx : arg)),
           ),
         );
       } catch (error) {

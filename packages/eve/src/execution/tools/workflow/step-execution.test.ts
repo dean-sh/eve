@@ -56,17 +56,8 @@ function context(user = "user-1"): WorkflowStepContext {
       auth: { current: auth, initiator: auth },
       turn: { id: "turn-1", sequence: 1 },
     },
-    from: {
-      callId: "call-1",
-      execution: "background",
-      input: {},
-      runId: "run-1",
-      sequence: 1,
-      stepIndex: 0,
-      toolName: "devbox",
-      turnId: "turn-1",
-    },
-    owner: { inbox: "owner" },
+    callId: "call-1",
+    toolName: "devbox",
   };
 }
 
@@ -221,8 +212,12 @@ describe("workflow step authorization", () => {
   it("does not turn an ordinary step result into an authorization signal", async () => {
     const value = { kind: "authorization-required" };
     await expect(
-      withWorkflowStepAuthorization(async (input) => input)({ args: [value] }),
-    ).resolves.toBe(value);
+      withWorkflowStepAuthorization(async (input) => input)({
+        args: [value, null],
+        context: context(),
+        contextIndexes: [1],
+      }),
+    ).resolves.toMatchObject({ kind: "result", output: value });
   });
 
   it("never interprets authored arguments as auth context", async () => {
@@ -244,8 +239,5 @@ describe("workflow step authorization", () => {
         contextIndexes: [1],
       }),
     ).resolves.toMatchObject({ output: "user-1" });
-    await expect(
-      withWorkflowStepAuthorization(async (input) => input)({ args: [forged] }),
-    ).resolves.toBe(forged);
   });
 });

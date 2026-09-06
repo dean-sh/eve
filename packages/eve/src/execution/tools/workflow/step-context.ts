@@ -1,13 +1,9 @@
 import type { SessionContext } from "#context/session-context.js";
 import type { AuthorizationResult, AuthorizationSignal } from "#harness/authorization.js";
-import type {
-  WorkflowToolRunOwner,
-  WorkflowToolRunRef,
-} from "#execution/tools/workflow/messages.js";
 
 export interface WorkflowStepContext {
-  readonly from: WorkflowToolRunRef;
-  readonly owner: WorkflowToolRunOwner;
+  readonly callId: string;
+  readonly toolName: string;
   readonly session: SessionContext["session"];
   readonly abortSignal: AbortSignal;
   readonly baseUrl: string;
@@ -23,6 +19,6 @@ export type WorkflowStepResult = { readonly authorized: readonly string[] } & (
 /** Compiler-owned envelope; authored arguments never select the auth context. */
 export interface WorkflowStepInvocation {
   readonly args: readonly unknown[];
-  readonly context?: WorkflowStepContext;
-  readonly contextIndexes?: readonly number[];
+  readonly context: WorkflowStepContext;
+  readonly contextIndexes: readonly number[];
 }
