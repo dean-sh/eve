@@ -47,6 +47,7 @@ async function executeAuthorizedStep(
   for (;;) {
     const callback = createHook<unknown>();
     const input: WorkflowStepContext = {
+      authorizationSupported: run.authorizationSupported === true,
       callId: ctx.callId,
       toolName: ctx.toolName,
       session: ctx.session,

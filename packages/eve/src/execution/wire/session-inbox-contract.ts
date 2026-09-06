@@ -10,6 +10,9 @@ export const SESSION_INBOX_WIRE_VERSION =
 /** Hook metadata field advertising the consumer's inbox wire capability. */
 export const SESSION_INBOX_WIRE_VERSION_METADATA_KEY = "sessionInboxWireVersion";
 
+/** The driver can display authorization events emitted by a workflow task itself. */
+export const WORKFLOW_TASK_AUTHORIZATION_METADATA_KEY = "workflowTaskAuthorization";
+
 export const SESSION_INBOX_CONTEXT_KEY = "eve.sessionInbox";
 
 /** Immutable inbox coordinates advertised by the receiving session's driver. */

@@ -13,6 +13,7 @@ import { workflowToolContextErrorMessage } from "#shared/workflow-tool-context.j
 const WORKFLOW_TOOL_RUN_CONTEXT = Symbol.for("eve.workflow-tool-run.context");
 
 export interface WorkflowToolRunContext {
+  readonly authorizationSupported?: boolean;
   /** Compatibility for already-started two-run background workflows. */
   readonly admission?: Promise<
     { readonly status: "accepted" } | { readonly status: "rejected"; readonly reason: string }

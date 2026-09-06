@@ -143,6 +143,64 @@ function eventsText(events: readonly { readonly data?: unknown }[]): string {
 
 describe("workflow step authorization", () => {
   it.each([false, true])(
+    "handles a driver without the auth capability (background=%s)",
+    async (background) => {
+      const runtime = await createWorkflowToolRuntime({
+        agentName: "workflow-step-old-driver",
+        background,
+        execute: authorizedDeployWorkflow,
+        toolName: "deploy_service",
+      });
+      await runtime.run(async () => {
+        const world = await getWorld();
+        const getByToken = world.hooks.getByToken.bind(world.hooks);
+        // Reproduce the old driver's persisted advertisement, without replacing ctx APIs.
+        const legacyDriver = vi
+          .spyOn(world.hooks, "getByToken")
+          .mockImplementation(async (...args) => {
+            const hook = await getByToken(...args);
+            return args[0] === sessionCommandHookToken(hook.runId)
+              ? { ...hook, metadata: undefined }
+              : hook;
+          });
+        const run = await start(workflowEntry, [
+          {
+            input: { message: 'Run deploy_service with service "preauthorized"' },
+            serializedContext: {
+              ...buildSerializedContext({
+                continuationToken: "http:step-old-driver",
+                mode: "conversation",
+              }),
+              "eve.auth": {
+                attributes: {},
+                authenticator: "test-idp",
+                issuer: "test-idp",
+                principalId: "user-1",
+                principalType: "user",
+              },
+            },
+          },
+        ]);
+        const stream = captureTurnEvents(run);
+        try {
+          const expected = background ? "Start a new session" : "authenticatedAs";
+          const events = [];
+          for (let i = 0; i < 5 && !JSON.stringify(events).includes(expected); i++)
+            events.push(...(await stream.nextTurn()));
+          expect(JSON.stringify(events)).toContain(expected);
+          expect(filterEventsByType(events, "authorization.required")).toHaveLength(0);
+          expect(JSON.stringify(events)).not.toContain("secret:");
+        } finally {
+          stream.dispose();
+          await run.cancel();
+          legacyDriver.mockRestore();
+        }
+      });
+    },
+    60_000,
+  );
+
+  it.each([false, true])(
     "resolves a user token inside a step (background=%s)",
     async (background) => {
       const runtime = await createWorkflowToolRuntime({

@@ -2,6 +2,7 @@ import type { SessionContext } from "#context/session-context.js";
 import type { AuthorizationResult, AuthorizationSignal } from "#harness/authorization.js";
 
 export interface WorkflowStepContext {
+  readonly authorizationSupported: boolean;
   readonly callId: string;
   readonly toolName: string;
   readonly session: SessionContext["session"];

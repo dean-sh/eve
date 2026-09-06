@@ -1,4 +1,7 @@
 import type { ContextContainer } from "#context/container.js";
+import { getHookByToken } from "#internal/workflow/runtime.js";
+import { WORKFLOW_TASK_AUTHORIZATION_METADATA_KEY } from "#execution/wire/session-inbox-contract.js";
+import { isObject } from "#shared/guards.js";
 import { loadContext } from "#context/container.js";
 import { ActivityObserverKey } from "#context/keys.js";
 import type { FrameworkContextProvider } from "#context/provider.js";
@@ -453,12 +456,17 @@ class BackgroundToolExecutionScope implements BackgroundToolExecutor {
         };
       }
     }
+    const driver = await getHookByToken(sessionCommandHookToken(this.initialSession.sessionId));
+    const authorizationSupported =
+      isObject(driver.metadata) &&
+      driver.metadata[WORKFLOW_TASK_AUTHORIZATION_METADATA_KEY] === true;
     await startTaskRun({
       activityObserver: taskInput.activityObserver,
       initialView: { metadata: task.metadata, status: "working", taskId: task.taskId },
       parentContinuationToken: sessionCommandHookToken(this.initialSession.sessionId),
       taskInboxToken: task.taskInboxToken,
       workflow: {
+        authorizationSupported,
         callId: taskInput.callId,
         executeInput: workflow.executeInput?.(workflowInput),
         input: workflowInput,
