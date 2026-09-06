@@ -4,6 +4,7 @@ import {
   parseToolErrorOutput,
   sendAndFollowQueuedTurn,
   waitForCompletedTask,
+  waitForTaskInput,
 } from "./shared.js";
 
 /** A persistent child with a nonterminal task rejects every competing continuation. */
@@ -57,10 +58,11 @@ export default defineTaskEval({
       status: "failed",
     });
 
+    const held = await waitForTaskInput(t, race.session, "hold");
     const later = await sendAndFollowQueuedTurn(
       t,
       `CHILD-TASK-EXCLUSIVITY-LATER ${agentId}`,
-      race.session,
+      held.session,
       { allowFailedActions: true },
     );
     later.turn.calledTool("busy-worker", {
@@ -69,6 +71,7 @@ export default defineTaskEval({
       status: "failed",
     });
 
+    await later.session.respond([{ optionId: "approve", requestId: held.request.requestId }]);
     await waitForCompletedTask(t, later.session, "CHILD-TASK-EXCLUSIVITY-VERIFY", admittedTaskId);
   },
 });
