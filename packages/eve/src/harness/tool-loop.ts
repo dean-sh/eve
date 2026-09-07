@@ -1259,11 +1259,13 @@ export function createToolLoopHarness(config: ToolLoopHarnessConfig): StepFn {
       }
       const taskState = ctx.get(TurnTaskStateKey);
       if (taskState !== undefined) {
-        currentMessages.add(emissionState.sequence, taskState);
+        currentMessages.add(emissionState.sequence, taskState, { placement: "tail" });
       }
     }
     if (deliveryPolicy.instruction !== undefined) {
-      currentMessages.add(emissionState.sequence, deliveryPolicy.instruction);
+      currentMessages.add(emissionState.sequence, deliveryPolicy.instruction, {
+        placement: hasScheduleProvenance ? "turn" : "tail",
+      });
     }
     const pendingApprovals = renderPendingApprovalsInstruction(
       getPendingInputBatches(session.state).flatMap((batch) => batch.requests),

@@ -12257,7 +12257,7 @@ describe("createToolLoopHarness", () => {
     });
 
     it.each(["plain", "client context", "compaction", "projected history"])(
-      "keeps framework context before the turn input across durable steps (%s)",
+      "preserves conversation history ahead of changing task context across durable steps (%s)",
       async (scenario) => {
         const withClientContext = scenario === "client context";
         if (scenario === "compaction") {
@@ -12317,14 +12317,21 @@ describe("createToolLoopHarness", () => {
         );
         expect(first.next).toBe(runStep);
         const firstPrompt = structuredClone(getLastAgentSettings().messages);
+        const firstInstructions = structuredClone(getLastAgentSettings().instructions);
         setupMockAgent(defaultModelResult());
         const restored = JSON.parse(JSON.stringify(first.session)) as HarnessSession;
+        ctx.set(TurnTaskStateKey, "Task status: analysis completed");
         await contextStorage.run(ctx, () => runStep(restored));
         const nextPrompt = getLastAgentSettings().messages;
-        expect(nextPrompt.slice(0, firstPrompt.length)).toEqual(firstPrompt);
+        expect(getLastAgentSettings().instructions).toEqual(firstInstructions);
+        expect(nextPrompt.slice(0, firstPrompt.length - 1)).toEqual(firstPrompt.slice(0, -1));
+        expect(nextPrompt.at(-1)).toEqual({
+          role: "user",
+          content: "Task status: analysis completed",
+        });
         expect(
           nextPrompt.filter((message) => message.content === "Task status: analysis in progress"),
-        ).toHaveLength(1);
+        ).toHaveLength(0);
       },
     );
 
@@ -12432,11 +12439,12 @@ describe("createToolLoopHarness", () => {
         runStep(createTestSession(), { message: "Start the background work." }),
       );
 
-      const { instructions } = getLastAgentSettings();
-      expect(instructions).toEqual({
-        role: "system",
-        content: `You are a test assistant.\n\n[Task state]\n{"tasks":[]}\n\n${TASK_DELIVERY_INITIATING_INSTRUCTION}`,
-      });
+      const { instructions, messages } = getLastAgentSettings();
+      expect(instructions).toBe("You are a test assistant.");
+      expect(messages.slice(-2)).toEqual([
+        { role: "user", content: '[Task state]\n{"tasks":[]}' },
+        { role: "user", content: TASK_DELIVERY_INITIATING_INSTRUCTION },
+      ]);
     });
 
     it("routes later-turn initiating task context through user messages", async () => {
@@ -12460,9 +12468,9 @@ describe("createToolLoopHarness", () => {
       const { instructions, messages } = getLastAgentSettings();
       expect(instructions).toBe("You are a test assistant.");
       expect(messages.slice(-3)).toEqual([
+        { role: "user", content: "Start the background work." },
         { role: "user", content: taskState },
         { role: "user", content: TASK_DELIVERY_INITIATING_INSTRUCTION },
-        { role: "user", content: "Start the background work." },
       ]);
     });
 
@@ -12523,8 +12531,8 @@ describe("createToolLoopHarness", () => {
         const { instructions, messages } = getLastAgentSettings();
         expect(instructions).toBe("You are a test assistant.");
         expect(messages.slice(-2)).toEqual([
-          { role: "user", content: instruction },
           { role: "user", content: "Background task task_1 is completed." },
+          { role: "user", content: instruction },
         ]);
       },
     );

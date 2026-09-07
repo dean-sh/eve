@@ -2,6 +2,7 @@ import type { ModelMessage, SystemModelMessage } from "ai";
 
 interface AddCurrentMessageOptions {
   readonly cacheFriendly?: boolean;
+  readonly placement?: "turn" | "tail";
 }
 
 interface CurrentMessagesOptions {
@@ -41,8 +42,11 @@ export function createCurrentMessages(
     currentTurnInsertionIndex !== undefined || !hasTailApprovalResponse(nonSystemMessages);
 
   return {
-    add(turnSequence, message, { cacheFriendly = true } = {}) {
-      if (turnSequence > 0 && cacheFriendly === true && canAppendUserMessages) {
+    add(turnSequence, message, { cacheFriendly = true, placement = "turn" } = {}) {
+      if (placement === "tail" && cacheFriendly && !hasTailApprovalResponse(nonSystemMessages)) {
+        // Changing runtime status must not precede otherwise reusable conversation history.
+        nonSystemMessages.push({ role: "user", content: message });
+      } else if (turnSequence > 0 && cacheFriendly === true && canAppendUserMessages) {
         nonSystemMessages.splice(userInsertionIndex, 0, { role: "user", content: message });
         userInsertionIndex += 1;
       } else {
