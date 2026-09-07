@@ -76,6 +76,23 @@ describe("createCompactionConfig", () => {
 });
 
 describe("createSession", () => {
+  it.each([undefined, false, true])(
+    "carries task context placement through session hydration (%s)",
+    (taskContextAtTail) => {
+      const turnAgent = createTestTurnAgent({ taskContextAtTail });
+      const session = createSession({
+        continuationToken: "root-token",
+        sessionId: "sess-root",
+        turnAgent,
+      });
+      expect(session.agent.taskContextAtTail).toBe(taskContextAtTail);
+      const hydrated = hydrateDurableSession({
+        durable: projectToDurableSession(session),
+        turnAgent,
+      });
+      expect(hydrated.agent.taskContextAtTail).toBe(taskContextAtTail);
+    },
+  );
   it("creates a session with correct agent configuration", () => {
     const outputSchema = { properties: { title: { type: "string" } }, type: "object" } as const;
     const session = createSession({
