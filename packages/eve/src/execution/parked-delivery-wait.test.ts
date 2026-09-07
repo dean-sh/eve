@@ -116,6 +116,110 @@ describe("nextTurnDelivery", () => {
     vi.mocked(routeDeliverToChildren).mockReset();
   });
 
+  it.each([
+    "completed",
+    "failed",
+    "input_required",
+    "other-cohort",
+    "user",
+    "caller",
+    "disabled",
+    "unset",
+  ])("batches successful siblings without crossing a %s delivery boundary", async (boundary) => {
+    const completion = (id: string): DeliverHookPayload => ({
+      kind: "deliver",
+      taskDeliveryId: `${id}:ready:completed`,
+      payloads: [
+        {
+          message: id,
+          task: {
+            views: [
+              {
+                taskId: id,
+                status: "completed",
+                metadata: { kind: "subagent", name: "signal" },
+                lastOutput: { type: "result", data: id },
+              },
+            ],
+          },
+        },
+      ],
+    });
+    const first = completion("task_1");
+    const second = completion("task_2");
+    const last: DeliverHookPayload =
+      boundary === "user"
+        ? { kind: "deliver", payloads: [{ message: "user direction" }] }
+        : boundary === "caller"
+          ? {
+              ...completion("task_3"),
+              caller: {
+                callId: "call",
+                subagentName: "worker",
+                replyTo: { kind: "hook", token: "reply" },
+                taskId: "task_3",
+              },
+            }
+          : {
+              ...completion("task_3"),
+              taskDeliveryId: `task_3:ready:${boundary === "other-cohort" ? "completed" : boundary}`,
+            };
+    const bufferedDeliveries = [first, second, last];
+    const input = waitInput(createMockInbox([]));
+    input.stateCursor.adoptState({
+      sessionState: {
+        ...sessionState,
+        snapshot: {
+          version: 1,
+          session: {
+            sessionId: "session",
+            continuationToken: "token",
+            agent: {
+              system: "",
+              batchTaskCompletions: boundary === "unset" ? undefined : boundary !== "disabled",
+            },
+            history: [],
+            state: {
+              "eve.tasks": {
+                version: 2,
+                tasks: ["task_1", "task_2", "task_3"].map((taskId) => ({
+                  taskId,
+                  taskRunId: `run-${taskId}`,
+                  taskInboxToken: `inbox-${taskId}`,
+                  createdByTurnId:
+                    taskId === "task_3" && boundary === "other-cohort" ? "turn-2" : "turn-1",
+                  metadata: { kind: "subagent", name: "signal" },
+                })),
+              },
+            },
+          },
+        },
+      },
+    });
+    vi.mocked(routeDeliverToChildren).mockImplementation(
+      async ({ delivery, sessionState, serializedContext }) => ({
+        kind: "continue",
+        remainder: delivery,
+        sessionState,
+        serializedContext,
+      }),
+    );
+    const next = await nextTurnDelivery({ ...input, bufferedDeliveries });
+    const count =
+      boundary === "disabled" || boundary === "unset" ? 1 : boundary === "completed" ? 3 : 2;
+    expect(next).toMatchObject({
+      kind: "turn",
+      delivery: {
+        taskDeliveryId: first.taskDeliveryId,
+        payloads: [first, ...(count >= 2 ? [second] : []), ...(count === 3 ? [last] : [])].flatMap(
+          (item) => item.payloads,
+        ),
+      },
+    });
+    expect(bufferedDeliveries).toEqual(count === 1 ? [second, last] : count === 3 ? [] : [last]);
+    expect(routeDeliverToChildren).toHaveBeenCalledTimes(1);
+  });
+
   it("surfaces an authorization callback as its own instruction", async () => {
     const inbox = createMockInbox([authorizationRead()]);
 
