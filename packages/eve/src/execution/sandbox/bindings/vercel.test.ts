@@ -146,7 +146,7 @@ afterEach(() => {
 });
 
 describe("createVercelSandbox", () => {
-  it("creates fresh Vercel sandboxes with eve's shared base image", async () => {
+  it("creates persistent Vercel sandbox templates with eve's shared base image", async () => {
     const templateSandbox = createMockSandbox({ name: "template-key" });
     const fetch = vi.fn();
     const sandboxModule = {
@@ -182,7 +182,7 @@ describe("createVercelSandbox", () => {
         image: VERCEL_EVE_SANDBOX_IMAGE,
         name: "template-key",
         networkPolicy: "allow-all",
-        persistent: false,
+        persistent: true,
         ports: [3000],
         projectId: "prj_123",
         teamId: "team_123",
@@ -492,7 +492,7 @@ describe("createVercelSandbox", () => {
     expect(sandboxModule.Sandbox.create).toHaveBeenCalledWith(
       expect.objectContaining({
         name: "template-key",
-        persistent: false,
+        persistent: true,
       }),
     );
     expect(freshTemplate.snapshot).toHaveBeenCalledTimes(1);
@@ -635,7 +635,7 @@ describe("createVercelSandbox", () => {
     const [templateArgs, sessionArgs] = create.mock.calls;
     expect(templateArgs?.[0]).toMatchObject({
       name: "template-key",
-      persistent: false,
+      persistent: true,
       timeout: 30 * 60 * 1_000,
     });
     expect(sessionArgs?.[0]).toMatchObject({
@@ -757,7 +757,7 @@ describe("createVercelSandbox", () => {
     expect(templateArgs?.[0]).toMatchObject({
       name: "template-key",
       networkPolicy: "allow-all",
-      persistent: false,
+      persistent: true,
       ports: [3000, 4000],
       resources: { vcpus: 2 },
       timeout: 600_000,
@@ -1008,7 +1008,7 @@ describe("createVercelSandbox", () => {
     });
     expect(create.mock.calls[1]?.[0]).toMatchObject({
       name: "template-key",
-      persistent: false,
+      persistent: true,
     });
     expect(create.mock.calls[2]?.[0]).toMatchObject({
       name: "session-key",
@@ -1352,7 +1352,7 @@ describe("createVercelSandbox", () => {
     const [templateArgs, sessionArgs] = create.mock.calls;
     expect(templateArgs?.[0]).toMatchObject({
       name: "template-key",
-      persistent: false,
+      persistent: true,
     });
     expect(sessionArgs?.[0]).toMatchObject({
       name: "session-key",
