@@ -73,3 +73,6 @@ minimumReleaseAgeExclude:
   - unstorage@2.0.0-alpha.10
   - run
   - workflow
+
+patchedDependencies:
+  "@vercel/geistdocs@1.25.0": patches/@vercel__geistdocs@1.25.0.patch

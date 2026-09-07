@@ -1,0 +1,70 @@
+diff --git a/dist/internal/chat/shell.js b/dist/internal/chat/shell.js
+index 2efcb9eafbc0e2cad246e915944969c2b909ca05..39d12d45832f16181b843654ce2549ab55d80be7 100644
+--- a/dist/internal/chat/shell.js
++++ b/dist/internal/chat/shell.js
+@@ -3,7 +3,7 @@ import { jsx as _jsx, jsxs as _jsxs, Fragment as _Fragment } from "react/jsx-run
+ import { useChat } from "@ai-sdk/react";
+ import { DefaultChatTransport } from "ai";
+ import { useLiveQuery } from "dexie-react-hooks";
+-import { ChevronRightIcon, Trash } from "lucide-react";
++import { ChevronRightIcon, Maximize2Icon, Minimize2Icon, Trash } from "lucide-react";
+ import { catchError } from "next/error";
+ import { usePathname } from "next/navigation";
+ import { Portal } from "radix-ui";
+@@ -90,7 +90,7 @@ const useChatPersistence = (title) => {
+         clearMessages,
+     };
+ };
+-const GeistdocsChatInner = ({ isOpen }) => {
++const GeistdocsChatInner = ({ isExpanded = false, isOpen, onExpandedChange }) => {
+     const id = useId();
+     const pathname = usePathname();
+     const textareaRef = useRef(null);
+@@ -167,9 +167,9 @@ const GeistdocsChatInner = ({ isOpen }) => {
+     if (isLoading) {
+         return (_jsx("div", { className: "flex size-full w-full flex-col items-center justify-center overflow-hidden whitespace-nowrap rounded-xl xl:max-w-md xl:border xl:bg-background-100", children: _jsx(Spinner, {}) }));
+     }
+-    return (_jsxs("div", { className: "flex size-full w-full flex-col overflow-hidden whitespace-nowrap bg-background-100", children: [_jsxs("div", { className: "flex items-center justify-between px-4 py-2.5", children: [_jsx("h2", { className: "font-semibold text-sm", children: "Chat" }), _jsx("div", { className: "flex items-center gap-3", children: _jsxs(ButtonGroup, { children: [_jsx(CopyChat, { messages: messages }), _jsxs(Tooltip, { children: [_jsx(TooltipTrigger, { asChild: true, children: _jsx(Button, { "aria-label": "Clear chat", disabled: messages.length === 0, onClick: handleClearChat, size: "icon-sm", variant: "ghost", children: _jsx(Trash, { className: "size-3.5" }) }) }), _jsx(TooltipContent, { children: "Clear chat" })] }), _jsxs(Tooltip, { children: [_jsx(TooltipTrigger, { asChild: true, children: _jsx(Button, { "aria-label": "Close chat", onClick: () => setIsOpen(false), size: "icon-sm", variant: "ghost", children: _jsx(ChevronRightIcon, { className: "size-3.5" }) }) }), _jsx(TooltipContent, { children: "Close chat" })] })] }) })] }), _jsxs(Conversation, { children: [_jsxs(ConversationContent, { children: [messages.map((message) => (_jsxs(Message, { className: "max-w-[90%]", from: message.role, children: [_jsx(MessageMetadata, { inProgress: status === "submitted" || status === "streaming", parts: message.parts }), message.parts
++    return (_jsxs("div", { className: "flex size-full w-full flex-col overflow-hidden whitespace-nowrap bg-background-100", children: [_jsxs("div", { className: cn("flex items-center justify-between px-4 py-2.5", isExpanded && "mx-auto w-full max-w-5xl px-6"), children: [_jsx("h2", { className: "font-semibold text-sm", children: "Chat" }), _jsx("div", { className: "flex items-center gap-3", children: _jsxs(ButtonGroup, { children: [_jsx(CopyChat, { messages: messages }), onExpandedChange ? (_jsxs(Tooltip, { children: [_jsx(TooltipTrigger, { asChild: true, children: _jsx(Button, { "aria-label": isExpanded ? "Collapse chat" : "Expand chat", "aria-pressed": isExpanded, onClick: () => onExpandedChange(!isExpanded), size: "icon-sm", variant: "ghost", children: isExpanded ? _jsx(Minimize2Icon, { className: "size-3.5" }) : _jsx(Maximize2Icon, { className: "size-3.5" }) }) }), _jsx(TooltipContent, { children: isExpanded ? "Collapse chat" : "Expand chat" })] })) : null, _jsxs(Tooltip, { children: [_jsx(TooltipTrigger, { asChild: true, children: _jsx(Button, { "aria-label": "Clear chat", disabled: messages.length === 0, onClick: handleClearChat, size: "icon-sm", variant: "ghost", children: _jsx(Trash, { className: "size-3.5" }) }) }), _jsx(TooltipContent, { children: "Clear chat" })] }), _jsxs(Tooltip, { children: [_jsx(TooltipTrigger, { asChild: true, children: _jsx(Button, { "aria-label": "Close chat", onClick: () => setIsOpen(false), size: "icon-sm", variant: "ghost", children: _jsx(ChevronRightIcon, { className: "size-3.5" }) }) }), _jsx(TooltipContent, { children: "Close chat" })] })] }) })] }), _jsxs(Conversation, { children: [_jsxs(ConversationContent, { className: cn(isExpanded && "mx-auto w-full max-w-5xl px-6"), children: [messages.map((message) => (_jsxs(Message, { className: cn(isExpanded ? "max-w-full" : "max-w-[90%]"), from: message.role, children: [_jsx(MessageMetadata, { inProgress: status === "submitted" || status === "streaming", parts: message.parts }), message.parts
+                                         .filter((part) => part.type === "text")
+-                                        .map((part) => (_jsx(MessageContent, { children: _jsx(MessageResponse, { className: "text-wrap", children: part.text }) }, `${message.id}-${part.type}-${part.text}`)))] }, message.id))), status === "submitted" ? (_jsx("div", { className: "size-12 text-gray-800 text-sm", children: _jsx(Spinner, {}) })) : null] }), _jsx(ConversationScrollButton, {})] }), _jsxs("div", { className: "relative grid w-auto shrink-0 gap-4 p-4", children: [messages.length ? null : (_jsxs(_Fragment, { children: [_jsx(Suggestions, { className: "flex-col items-start gap-px", children: suggestions.map((text) => (_jsx(Suggestion, { className: "rounded-none p-0 text-copy-14", onClick: handleSuggestionClick, suggestion: text, variant: "link" }, text))) }), _jsxs("p", { className: "text-gray-800 text-sm", children: ["Tip: You can open and close chat with", " ", _jsxs(KbdGroup, { children: [_jsx(Kbd, { className: "border bg-transparent", children: "\u2318" }), _jsx(Kbd, { className: "border bg-transparent", children: "I" })] })] })] })), _jsx(ChatPromptInput, { onChange: setPrompt, onStop: stop, onSubmit: (event) => {
++                                        .map((part) => (_jsx(MessageContent, { children: _jsx(MessageResponse, { className: "text-wrap", children: part.text }) }, `${message.id}-${part.type}-${part.text}`)))] }, message.id))), status === "submitted" ? (_jsx("div", { className: "size-12 text-gray-800 text-sm", children: _jsx(Spinner, {}) })) : null] }), _jsx(ConversationScrollButton, {})] }), _jsxs("div", { className: cn("relative grid w-auto shrink-0 gap-4 p-4", isExpanded && "mx-auto w-full max-w-5xl px-6"), children: [messages.length ? null : (_jsxs(_Fragment, { children: [_jsx(Suggestions, { className: "flex-col items-start gap-px", children: suggestions.map((text) => (_jsx(Suggestion, { className: "rounded-none p-0 text-copy-14", onClick: handleSuggestionClick, suggestion: text, variant: "link" }, text))) }), _jsxs("p", { className: "text-gray-800 text-sm", children: ["Tip: You can open and close chat with", " ", _jsxs(KbdGroup, { children: [_jsx(Kbd, { className: "border bg-transparent", children: "\u2318" }), _jsx(Kbd, { className: "border bg-transparent", children: "I" })] })] })] })), _jsx(ChatPromptInput, { onChange: setPrompt, onStop: stop, onSubmit: (event) => {
+                             event.preventDefault();
+                             handleSubmit().catch((error) => {
+                                 console.error("Failed to submit chat message:", error);
+@@ -181,8 +181,19 @@ const GeistdocsChatErrorBoundary = catchError(GeistdocsChatErrorFallback);
+ export const GeistdocsChatShell = () => {
+     const { enabled, isOpen, setIsOpen } = useGeistdocsChat();
+     const isMobile = useIsMobile();
++    const [isExpanded, setIsExpanded] = useState(false);
++    useEffect(() => {
++        if (!isOpen) {
++            setIsExpanded(false);
++        }
++    }, [isOpen]);
+     useEffect(() => {
+         const handleKeyDown = (event) => {
++            if (event.key === "Escape" && isExpanded) {
++                event.preventDefault();
++                setIsExpanded(false);
++                return;
++            }
+             if ((event.metaKey || event.ctrlKey) &&
+                 !event.altKey &&
+                 !event.shiftKey &&
+@@ -193,7 +204,7 @@ export const GeistdocsChatShell = () => {
+         };
+         window.addEventListener("keydown", handleKeyDown);
+         return () => window.removeEventListener("keydown", handleKeyDown);
+-    }, [setIsOpen]);
++    }, [isExpanded, setIsOpen]);
+     if (!enabled) {
+         return null;
+     }
+@@ -202,5 +213,5 @@ export const GeistdocsChatShell = () => {
+                     // modal surfaces like the search command menu, dialogs, and
+                     // dropdowns (z-50), so opening the command menu paints over an
+                     // open chat panel.
+-                    "fixed inset-y-0 right-0 z-45 flex h-full w-3/4 max-w-sm flex-col gap-4 border-l bg-background-100 transition-all", "translate-x-full data-[state=open]:translate-x-0"), "data-state": isOpen ? "open" : "closed", children: _jsx(GeistdocsChatErrorBoundary, { onClose: () => setIsOpen(false), children: _jsx(GeistdocsChatInner, { isOpen: isOpen }) }) }) }), _jsx("div", { className: "md:hidden", children: _jsx(Drawer, { onOpenChange: isMobile ? setIsOpen : undefined, open: isMobile ? isOpen : false, children: _jsxs(DrawerContent, { className: "h-[80dvh]", children: [_jsx(DrawerTitle, { className: "sr-only", children: "Ask AI" }), _jsx(DrawerDescription, { className: "sr-only", children: "Chat with the documentation." }), _jsx(GeistdocsChatErrorBoundary, { onClose: () => setIsOpen(false), children: _jsx(GeistdocsChatInner, { isOpen: isOpen }) })] }) }) })] }));
++                    "fixed inset-y-0 right-0 z-45 flex h-full flex-col gap-4 border-l bg-background-100 transition-all", isExpanded ? "w-screen max-w-none border-l-0" : "w-3/4 max-w-sm", "translate-x-full data-[state=open]:translate-x-0"), "data-state": isOpen ? "open" : "closed", children: _jsx(GeistdocsChatErrorBoundary, { onClose: () => setIsOpen(false), children: _jsx(GeistdocsChatInner, { isExpanded: isExpanded, isOpen: isOpen, onExpandedChange: setIsExpanded }) }) }) }), _jsx("div", { className: "md:hidden", children: _jsx(Drawer, { onOpenChange: isMobile ? setIsOpen : undefined, open: isMobile ? isOpen : false, children: _jsxs(DrawerContent, { className: "h-[80dvh]", children: [_jsx(DrawerTitle, { className: "sr-only", children: "Ask AI" }), _jsx(DrawerDescription, { className: "sr-only", children: "Chat with the documentation." }), _jsx(GeistdocsChatErrorBoundary, { onClose: () => setIsOpen(false), children: _jsx(GeistdocsChatInner, { isOpen: isOpen }) })] }) }) })] }));
+ };
