@@ -542,7 +542,7 @@ export async function turnStep(rawInput: TurnStepInput): Promise<DurableStepResu
       return runHarnessStep(schemaSession, resolved);
     });
   } catch (error) {
-    if (!isTurnCancellation(error)) {
+    if (!isTurnCancellation(error) && input.abortSignal?.aborted !== true) {
       await failChannelDeliveries(error);
       throw error;
     }
@@ -553,9 +553,13 @@ export async function turnStep(rawInput: TurnStepInput): Promise<DurableStepResu
     // again after this cancellation settles.
     const interrupted = serializeContext(ctx);
     const retained = readRetainedBackgroundToolResult(ctx);
-    const cancelledSession = await preserveCancelledTurnMessage(
-      retained?.backgroundTaskSession ?? initialSession,
-      resolved,
+    // Runs inside the ALS scope: preserving the message stages its
+    // attachments, and `stageAttachmentsToSandbox` reads the sandbox off the
+    // active context. The harness step's own scope closed when it threw, so
+    // without this the cancellation epilogue fails with "No active eve
+    // context" whenever the discarded turn carried a file part.
+    const cancelledSession = await contextStorage.run(ctx, () =>
+      preserveCancelledTurnMessage(retained?.backgroundTaskSession ?? initialSession, resolved),
     );
     return {
       action: "cancelled",

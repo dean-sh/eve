@@ -53,6 +53,7 @@ async function transformAndEval(
       entry,
       collectDurableDynamicToolCallbacks({
         approval: entry.approval as never,
+        approvalKey: entry.approvalKey as never,
         execute: entry.execute as never,
         toModelOutput: entry.toModelOutput as never,
       }),
@@ -1972,11 +1973,13 @@ export default defineDynamic({
     expect(await transformDynamicToolExecute("tools/null.ts", source)).toBeNull();
   });
 
-  it("leaves executes that are workflow functions unstamped", async () => {
-    // The shape the directive transform hands over: bodies hoisted to
-    // top-level declarations (here already stubbed) and referenced by name.
-    const source = `
-import { defineTool } from "eve/tools";
+  it.each(["named", "namespace"])(
+    "leaves workflow executors unstamped with a %s import",
+    async (style) => {
+      // The shape the directive transform hands over: bodies hoisted to
+      // top-level declarations (here already stubbed) and referenced by name.
+      let source = `
+import { defineWorkflowTool } from "eve/tools";
 
 async function execute(input) {
   throw new Error("stub");
@@ -1988,28 +1991,34 @@ async function deploy(input) {
 }
 deploy.workflowId = "workflow//./agent/tools/deploy//deploy";
 
-export default defineTool({
+export default defineWorkflowTool({
   description: "Inline body",
   inputSchema: {},
   execute,
   async toModelOutput(output) { return String(output); },
 });
 
-export const referenced = defineTool({
+export const referenced = defineWorkflowTool({
   description: "Referenced body",
   inputSchema: {},
   execute: deploy,
 });
 `;
-    const result = await transformDynamicToolExecute(
-      "agent/tools/deploy.ts",
-      source,
-      new Set(["execute", "deploy"]),
-    );
-    expect(result).not.toBeNull();
-    expect(result?.code).not.toContain("__eve_dynamic_exec_");
-    expect(result?.code).toContain("toModelOutput: __eveStampDynamicCallback(");
-  });
+      if (style === "namespace") {
+        source = source
+          .replace("import { defineWorkflowTool }", "import * as tools")
+          .replaceAll("defineWorkflowTool({", "tools.defineWorkflowTool({");
+      }
+      const result = await transformDynamicToolExecute(
+        "agent/tools/deploy.ts",
+        source,
+        new Set(["execute", "deploy"]),
+      );
+      expect(result).not.toBeNull();
+      expect(result?.code).not.toContain("__eve_dynamic_exec_");
+      expect(result?.code).toContain("toModelOutput: __eveStampDynamicCallback(");
+    },
+  );
 });
 
 // ===========================================================================
@@ -2416,5 +2425,34 @@ export default defineDynamic({
 
     expect(code).toContain("const { tag } = __vars");
     expect(code).toMatch(/\(\.\.\.__args\) => __eve_dynamic_exec_\d+\(\{ tag \}, \.\.\.__args\)/);
+  });
+});
+
+describe("approvalKey callbacks", () => {
+  it("captures input-scoped approval keys for durable replay", async () => {
+    const { callHandler } = await transformAndEval(
+      "tools/scoped.ts",
+      `
+      import { defineDynamic, defineTool } from "eve";
+      export default defineDynamic({ events: { "step.started": () => {
+        const prefix = "repo";
+        return { write: defineTool({
+          description: "write",
+          inputSchema: { type: "object" },
+          execute: () => ({ ok: true }),
+          approvalKey: (input) => prefix + ":" + input.branch,
+        }) };
+      } } });
+    `,
+    );
+    const result = await callHandler();
+    const entry = result.write as { approvalKey: (input: unknown) => string };
+    const descriptor = readDurableDynamicCallback(entry.approvalKey)!;
+    expect(descriptor.closure).toEqual({ prefix: "repo" });
+    expect(
+      (descriptor.callback as Function)(JSON.parse(JSON.stringify(descriptor.closure)), {
+        branch: "main",
+      }),
+    ).toBe("repo:main");
   });
 });

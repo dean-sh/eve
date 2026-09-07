@@ -76,6 +76,8 @@ export interface PublicToolDefinition<
    * The AI SDK can use this for tool result typing.
    */
   outputSchema?: PublicToolOutputSchema<TOutput>;
+  /** Derives the input-scoped key recorded when this tool is approved. */
+  approvalKey?: (input: Readonly<ApprovalContextInput<TInput>>) => string;
 }
 
 export interface InternalToolDefinitionWithExecuteFn<
@@ -94,7 +96,7 @@ export interface PublicToolDefinitionWithExecuteFn<
 
 /**
  * A question a workflow tool asks the human on the session's channel, sent
- * with `ask` from `eve/workflow`. Channels render it the way they render
+ * with `ctx.ask` from a `defineWorkflowTool` executor. Channels render it the way they render
  * `ask_question` and tool approvals.
  */
 export interface ToolInputRequest {
@@ -125,10 +127,8 @@ export interface ToolInputResponse {
  * Extends {@link SessionContext} with token accessors. Passing a provider
  * resolves that provider inline, which lets one tool use multiple credentials.
  *
- * A tool whose `execute` is a workflow (`"use workflow"`) receives the same
- * context inside its durable body, except that `getSandbox`, `getSkill`,
- * `getToken`, and `requireAuth` are unavailable there and throw when touched —
- * read credentials inside a `"use step"` function instead.
+ * Workflow tools use the separate `WorkflowToolContext` provided by
+ * `defineWorkflowTool`.
  */
 export type ToolContext = SessionContext & {
   /**
@@ -257,6 +257,10 @@ export function defineTool<
   outputSchema?: PublicToolDefinition<unknown, TaskReceipt>["outputSchema"];
   execute(input: StandardSchemaV1.InferOutput<TSchema>, ctx: ToolContext, task: TaskExec): TReturn;
   approval?: BackgroundToolDefinition<StandardSchemaV1.InferOutput<TSchema>, unknown>["approval"];
+  approvalKey?: BackgroundToolDefinition<
+    StandardSchemaV1.InferOutput<TSchema>,
+    unknown
+  >["approvalKey"];
   toModelOutput?: BackgroundToolDefinition<
     unknown,
     BackgroundToolOutputFromExecuteReturn<TReturn>
@@ -279,6 +283,7 @@ export function defineTool<
   outputSchema: TOutputSchema;
   execute(input: StandardSchemaV1.InferOutput<TInputSchema>, ctx: ToolContext): TReturn;
   approval?: ToolDefinition<StandardSchemaV1.InferOutput<TInputSchema>, unknown>["approval"];
+  approvalKey?: ToolDefinition<StandardSchemaV1.InferOutput<TInputSchema>, unknown>["approvalKey"];
   toModelOutput?: ToolDefinition<
     unknown,
     StandardJSONSchemaV1.InferOutput<TOutputSchema>
@@ -297,6 +302,7 @@ export function defineTool<
   outputSchema?: JsonObject;
   execute(input: StandardSchemaV1.InferOutput<TSchema>, ctx: ToolContext): TReturn;
   approval?: ToolDefinition<StandardSchemaV1.InferOutput<TSchema>, unknown>["approval"];
+  approvalKey?: ToolDefinition<StandardSchemaV1.InferOutput<TSchema>, unknown>["approvalKey"];
   toModelOutput?: ToolDefinition<unknown, ToolOutputFromExecuteReturn<TReturn>>["toModelOutput"];
 }): ToolDefinitionWithExecuteReturn<
   StandardSchemaV1.InferOutput<TSchema>,
@@ -315,6 +321,7 @@ export function defineTool<
   outputSchema: TOutputSchema;
   execute(input: Record<string, unknown>, ctx: ToolContext): TReturn;
   approval?: ToolDefinition<Record<string, unknown>, unknown>["approval"];
+  approvalKey?: ToolDefinition<Record<string, unknown>, unknown>["approvalKey"];
   toModelOutput?: ToolDefinition<
     unknown,
     StandardJSONSchemaV1.InferOutput<TOutputSchema>
@@ -330,6 +337,7 @@ export function defineTool<TReturn>(definition: {
   outputSchema?: JsonObject;
   execute(input: Record<string, unknown>, ctx: ToolContext): TReturn;
   approval?: ToolDefinition<Record<string, unknown>, unknown>["approval"];
+  approvalKey?: ToolDefinition<Record<string, unknown>, unknown>["approvalKey"];
   toModelOutput?: ToolDefinition<unknown, ToolOutputFromExecuteReturn<TReturn>>["toModelOutput"];
 }): ToolDefinitionWithExecuteReturn<
   Record<string, unknown>,
@@ -342,9 +350,21 @@ export function defineTool<TInput = unknown, TOutput = unknown>(
 export function defineTool<TInput = unknown, TOutput = unknown>(
   definition: ToolDefinition<TInput, TOutput> | BackgroundToolDefinition<TInput, TOutput>,
 ): ToolDefinition<TInput, TOutput> | BackgroundToolDefinition<TInput, TOutput> {
+  return stampToolDefinition(definition, "defineTool");
+}
+
+export function stampToolDefinition<
+  T extends {
+    readonly description: string;
+    readonly execute: (...args: never[]) => unknown;
+    readonly approval?: Approval<never>;
+    readonly approvalKey?: (...args: never[]) => unknown;
+    readonly toModelOutput?: (...args: never[]) => unknown;
+  },
+>(definition: T, definer: "defineTool" | "defineWorkflowTool"): T {
   if ((definition as { readonly auth?: unknown }).auth !== undefined) {
     throw new Error(
-      `defineTool: The "auth" field is no longer supported. ` +
+      `${definer}: The "auth" field is no longer supported. ` +
         `Pass auth providers inline to ctx.getToken(provider) or ctx.requireAuth(provider).`,
     );
   }
@@ -352,7 +372,8 @@ export function defineTool<TInput = unknown, TOutput = unknown>(
   stampDurableDynamicToolCallbacks(
     definition,
     collectDurableDynamicToolCallbacks({
-      approval: definition.approval as Approval<never> | undefined,
+      approval: definition.approval,
+      approvalKey: definition.approvalKey,
       execute: definition.execute,
       toModelOutput: definition.toModelOutput,
     }),

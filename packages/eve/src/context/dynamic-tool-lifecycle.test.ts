@@ -1,3 +1,4 @@
+import { defineWorkflowTool } from "#tools/workflow-definition.js";
 import { asSchema } from "ai";
 import { describe, expect, it, vi } from "vitest";
 
@@ -427,6 +428,9 @@ function stampTestTool(entry: DynamicToolEntry): DynamicToolEntry {
         ),
       closure: {},
     },
+    ...(entry.approvalKey === undefined
+      ? {}
+      : { approvalKey: { callback: (_closure, input) => entry.approvalKey!(input), closure: {} } }),
     ...(request === undefined
       ? {}
       : {
@@ -1235,6 +1239,30 @@ describe("dispatchDynamicToolEvent", () => {
     expect(buildDynamicTools(ctx)).toHaveLength(0);
   });
 
+  it.each(["single", "map"])(
+    "does not advertise a workflow tool returned as a %s",
+    async (shape) => {
+      const ctx = createCtx();
+      const tool = defineWorkflowTool({
+        description: "Invalid dynamic workflow",
+        inputSchema: {},
+        async execute() {
+          return 1;
+        },
+      });
+      const resolver = createResolver("workflow", ["session.started"], () =>
+        shape === "single" ? tool : { workflow: tool },
+      );
+      await dispatchDynamicToolEvent({
+        ctx,
+        resolvers: [resolver],
+        messages: [],
+        event: makeEvent("session.started"),
+      });
+      expect(buildDynamicTools(ctx)).toHaveLength(0);
+    },
+  );
+
   it("resolver throwing is logged and skipped — other resolvers still work", async () => {
     const ctx = createCtx();
     const badResolver = createResolver("bad", ["session.started"], () => {
@@ -1415,6 +1443,49 @@ describe("programmatic dynamic tools (no bundler transform)", () => {
       "user-approval",
     );
   });
+
+  it.each(["step.started", "turn.started", "session.started"])(
+    "preserves scoped approval keys through %s metadata replay",
+    async (eventName) => {
+      const ctx = createCtx();
+      const approvalKey = vi.fn(
+        (input: Readonly<Record<string, unknown>>) => `risky:${String(input.scope)}`,
+      );
+      const entry = stampTestTool(
+        Object.assign(
+          defineTool({
+            description: "scoped destructive op",
+            inputSchema: { type: "object" },
+            approval: () => "user-approval" as const,
+            execute: async () => ({ ok: true }),
+          }),
+          { approvalKey },
+        ),
+      );
+      const resolver = createResolver("connection", [eventName], () => ({ risky: entry }));
+      await dispatchDynamicToolEvent({
+        ctx,
+        resolvers: [resolver],
+        messages: [],
+        event: makeEvent(eventName),
+      });
+      const metadataKey =
+        eventName === "step.started"
+          ? StepDynamicToolMetadataKey
+          : eventName === "turn.started"
+            ? TurnDynamicToolMetadataKey
+            : SessionDynamicToolMetadataKey;
+      ctx.set(metadataKey, JSON.parse(JSON.stringify(ctx.get(metadataKey))));
+      const [tool] = buildDynamicTools(ctx);
+      expect(tool!.approvalKey?.({ scope: "repo" })).toBe("risky:repo");
+      expect(tool!.approvalKey?.({ scope: "other" })).toBe("risky:other");
+      getDynamicCallbackRegistry().delete("risky");
+      const [missing] = buildDynamicTools(ctx);
+      expect(() => missing!.approvalKey?.({ scope: "repo" })).toThrow(
+        "cannot replay its approvalKey callback",
+      );
+    },
+  );
 
   it("replays approval from session-scoped dynamic tools", async () => {
     const ctx = createCtx();

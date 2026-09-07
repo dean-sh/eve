@@ -1,5 +1,7 @@
 import type { ModelMessage } from "ai";
 
+import { isWorkflowToolDefinition } from "#tools/workflow-definition.js";
+
 import { replayDynamicTools } from "#context/build-dynamic-tools.js";
 import { contextStorage, type AlsContext } from "#context/container.js";
 import type { ContextKey } from "#context/key.js";
@@ -89,6 +91,14 @@ function readDynamicToolResult(
   resolver: ResolvedDynamicToolResolver,
   value: unknown,
 ): { readonly entries: Record<string, DynamicToolEntry>; readonly isSingle: boolean } {
+  const assertOrdinaryTool = (entry: unknown): void => {
+    if (isWorkflowToolDefinition(entry)) {
+      throw new Error(
+        `Dynamic tool resolver "${resolver.logicalPath}" cannot return defineWorkflowTool(). Workflow tools must be static tools; use defineTool() for dynamic entries.`,
+      );
+    }
+  };
+  assertOrdinaryTool(value);
   if (isBrandedToolEntry(value)) {
     return { entries: { _single: value as DynamicToolEntry }, isSingle: true };
   }
@@ -100,6 +110,7 @@ function readDynamicToolResult(
 
   const entries: Record<string, DynamicToolEntry> = {};
   for (const [name, entry] of Object.entries(value)) {
+    assertOrdinaryTool(entry);
     if (!isBrandedToolEntry(entry)) {
       throw new Error(
         `Dynamic tool resolver "${resolver.logicalPath}" returned "${name}" without defineTool(). Wrap every dynamic tool entry in defineTool().`,
@@ -169,6 +180,7 @@ export function validateDurableDynamicToolCallbacks(
   const unknownPhases = Object.keys(raw).filter(
     (key) =>
       key !== "execute" &&
+      key !== "approvalKey" &&
       key !== "approvalRequest" &&
       key !== "approvalResponse" &&
       key !== "toModelOutput",
@@ -190,6 +202,12 @@ export function validateDurableDynamicToolCallbacks(
     stamped: raw.execute,
     required: true,
   })!;
+  const approvalKey = validateReference({
+    name,
+    phase: "approvalKey",
+    stamped: raw.approvalKey,
+    required: entry.approvalKey !== undefined,
+  });
   const approvalRequest = validateReference({
     name,
     phase: "approvalRequest",
@@ -211,10 +229,12 @@ export function validateDurableDynamicToolCallbacks(
 
   const callbacks: {
     execute: DurableDynamicCallbackReference;
+    approvalKey?: DurableDynamicCallbackReference;
     approvalRequest?: DurableDynamicCallbackReference;
     approvalResponse?: DurableDynamicCallbackReference;
     toModelOutput?: DurableDynamicCallbackReference;
   } = { execute };
+  if (approvalKey !== undefined) callbacks.approvalKey = approvalKey;
   if (approvalRequest !== undefined) callbacks.approvalRequest = approvalRequest;
   if (approvalResponse !== undefined) callbacks.approvalResponse = approvalResponse;
   if (toModelOutput !== undefined) callbacks.toModelOutput = toModelOutput;
