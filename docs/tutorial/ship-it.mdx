@@ -33,9 +33,16 @@ The dashboard talks to the built-in eve HTTP channel (`agent/channels/eve.ts`). 
 
 import { useEveAgent } from "eve/react";
 
-export function AgentChat() {
-  const agent = useEveAgent();
-  const isBusy = agent.status === "submitted" || agent.status === "streaming";
+export function AgentChat({
+  sessionId,
+  sessionless = false,
+}: {
+  sessionId?: string;
+  sessionless?: boolean;
+}) {
+  const initialSession = !sessionless && sessionId ? { sessionId, streamIndex: 0 } : undefined;
+  const agent = useEveAgent({ initialSession, resume: initialSession !== undefined });
+  const isBusy = ["resuming", "submitted", "streaming"].includes(agent.status);
 
   return (
     <form
@@ -49,11 +56,32 @@ export function AgentChat() {
       {agent.data.messages.map((message) => (
         <article key={message.id}>
           <header>{message.role}</header>
-          {message.parts.map((part, index) =>
-            part.type === "text" ? <p key={index}>{part.text}</p> : null,
-          )}
+          {message.parts.map((part, index) => {
+            if (part.type === "text") return <p key={index}>{part.text}</p>;
+            if (
+              part.type === "dynamic-tool" &&
+              part.toolName === "chart_series" &&
+              part.state === "output-available" &&
+              part.output !== null &&
+              typeof part.output === "object" &&
+              "pngBase64" in part.output &&
+              typeof part.output.pngBase64 === "string"
+            ) {
+              const src = `data:image/png;base64,${part.output.pngBase64}`;
+              return (
+                <figure key={index}>
+                  <img src={src} alt="Generated revenue chart" />
+                  <a href={src} download="chart.png">
+                    Download chart
+                  </a>
+                </figure>
+              );
+            }
+            return null;
+          })}
         </article>
       ))}
+      {agent.error && <p role="alert">{agent.error.message}</p>}
       <input name="q" disabled={isBusy} placeholder="Ask about the data…" />
       <button type="submit" disabled={isBusy}>
         Ask
@@ -73,7 +101,11 @@ export default function Page() {
 }
 ```
 
+The optional props also support the generated `/s/[sessionId]` and `/s` pages: the first resumes that session, and `sessionless` starts a new conversation.
+
 `agent.data.messages` and `agent.status` cover most chat UIs. The generated Web Chat renders HITL prompts directly in the conversation: approvals get action controls, and `ask_question` gets a visible form with vertical choices, a text field, or both. The spend approval from [Step 8](./guard-the-spend) uses the same response path. For the full API, see [Frontend](../guides/frontend/overview).
+
+The chart renderer uses the PNG bytes returned by the [Step 5 tool](./run-analysis), so it works without a public sandbox file server. The minimal component above renders text and charts only; keep the generated Web Chat's approval and question controls when using the later human-in-the-loop steps.
 
 ## Replace `placeholderAuth`
 
@@ -131,14 +163,14 @@ On Vercel, the web app stays public and the eve runtime sits behind it on the sa
 npx eve dev https://your-analytics-app.vercel.app
 ```
 
-That's the full assistant, deployed and authed. It queries the warehouse, runs analysis in a sandbox, charts the results, remembers your team's definitions, loads the right playbook per team, and asks before it spends.
+The assistant queries the sample database (or your optional warehouse), runs analysis in a sandbox, charts the results, remembers your team's definitions, loads the right playbook per team, and asks before it spends.
 
 ## What you learned
 
 Across the nine steps you built and shipped one agent, and along the way you used:
 
 - **Tools** to give the model typed actions (`run_sql`, `chart_series`, `define_metric`).
-- **Connections** to reach a warehouse over an OAuth MCP, with per-user tokens eve resolves for you.
+- **Optional connections** to reach a warehouse over an OAuth MCP, with per-user tokens eve resolves for you.
 - **The sandbox** to compute and chart beyond SQL in an isolated `/workspace`.
 - **State** (`defineState`) to remember the team's glossary across turns.
 - **Dynamic skills** (`defineDynamic`) to load the right team playbook per caller.

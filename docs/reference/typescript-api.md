@@ -187,7 +187,7 @@ Pass another bare OpenAI model slug to override the default. `experimental_chatg
 
 Authentication is delegated entirely to the Codex CLI:
 
-1. Install or upgrade `codex` and run `codex login`.
+1. Install or upgrade the Codex CLI with `npm install -g @openai/codex`, then run `codex login`.
 2. `eve dev` asks `codex app-server` for a usable access token. Codex owns refresh and credential persistence; eve does not read or write Codex login files.
 3. Normal token expiry is refreshed automatically. If the login is revoked, the status line shows `codex login`; completing login inside or outside eve repairs the running dev session without restarting it.
 

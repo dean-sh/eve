@@ -31,12 +31,17 @@ export default defineTool({
     const sandbox = await ctx.getSandbox();
     await sandbox.writeTextFile({ path: "analysis/run.py", content: script });
     const result = await sandbox.run({ command: "python analysis/run.py" });
-    return { stdout: result.stdout };
+    if (result.exitCode !== 0) {
+      throw new Error(`Analysis failed (${result.exitCode}): ${result.stderr}`);
+    }
+    return { stdout: result.stdout, stderr: result.stderr };
   },
 });
 ```
 
 `ctx.getSandbox()` takes no arguments, is async, and only works inside authored runtime execution.
+
+`sandbox.run()` resolves with `{ exitCode, stdout, stderr }` even when the command fails. Check `exitCode` before returning a successful tool result. Python needs a backend that runs real binaries; `just-bash` cannot run it. See [Run analysis](./tutorial/run-analysis#install-the-chart-dependencies) for a complete Python and matplotlib bootstrap.
 
 `/workspace` is one namespace across every backend, so `/workspace/foo` points at the same file whether the backend is local or Vercel. When you need to interpolate a path into a generated command, `sandbox.resolvePath("repo/build.py")` anchors a relative path to its absolute `/workspace/repo/build.py` form.
 
@@ -44,7 +49,7 @@ The handle does more than `run` and `writeTextFile`. In every method, relative p
 
 | Method                                   | Does                                                                                            |
 | ---------------------------------------- | ----------------------------------------------------------------------------------------------- |
-| `run({ command })`                       | run one command, block until it exits, return `{ stdout, stderr, ... }`                         |
+| `run({ command })`                       | run one command, block until it exits, return `{ exitCode, stdout, stderr }`                    |
 | `spawn(options)`                         | launch a long-running process (server, watcher) and return a `SandboxProcess` handle            |
 | `readTextFile` / `writeTextFile`         | read/write a UTF-8 (or specified encoding) file; `readTextFile` supports 1-based line ranges    |
 | `readBinaryFile` / `writeBinaryFile`     | read/write raw bytes (images, archives, anything non-text)                                      |

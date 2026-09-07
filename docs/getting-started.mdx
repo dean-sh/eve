@@ -14,6 +14,15 @@ You need:
 
 The default scaffolded model routes through the Vercel AI Gateway. Set `AI_GATEWAY_API_KEY`, or link a Vercel project to use `VERCEL_OIDC_TOKEN`. To use a model provider directly, install its AI SDK provider package and set the provider's API key.
 
+To use your ChatGPT subscription, install the Codex CLI and sign in before selecting **ChatGPT subscription** in the dev TUI's `/model` menu:
+
+```bash
+npm install -g @openai/codex
+codex login
+```
+
+eve uses the Codex login on the machine running the agent. For headless login and runtime requirements, see [ChatGPT subscription models](./reference/typescript-api#chatgpt-subscription-models).
+
 Choose a model, provider, and channel that meet your data-processing and compliance requirements.
 
 ## Create a project

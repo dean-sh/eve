@@ -1,15 +1,15 @@
 ---
 title: "Run Analysis"
-description: "Part 5 of the Build an Agent tutorial. Seed the warehouse schema into the sandbox workspace, then compute and chart beyond SQL."
+description: "Part 5 of the Build an Agent tutorial. Seed the sample schema into the sandbox workspace, then compute and chart beyond SQL."
 ---
 
-SQL tells the analytics assistant the numbers, but a cohort curve, a forecast, or a chart needs real computation. That's what the sandbox is for. It's an isolated bash environment with a `/workspace` filesystem, and every agent gets exactly one.
+The analytics assistant can chart the Step 3 sample data by running Python in its sandbox, then returning the PNG to your machine. The sandbox is an isolated environment with a `/workspace` filesystem.
 
-This takes two pieces. First seed reference files the model can read, then compute against them.
+This step installs matplotlib, seeds the sample schema, and adds a chart tool. Keep using the sample database; a warehouse connection is optional.
 
 ## Seed the schema into the workspace
 
-Mount the warehouse schema into the sandbox so the model isn't guessing at table shapes. Seeding uses the folder sandbox layout, where anything under `agent/sandbox/workspace/` lands in the live `/workspace` cwd at session bootstrap.
+Mount the sample database schema into the sandbox so the model isn't guessing at table shapes. Seeding uses the folder sandbox layout, where anything under `agent/sandbox/workspace/` lands in the live `/workspace` cwd at session bootstrap.
 
 ```text
 agent/sandbox/
@@ -22,66 +22,154 @@ agent/sandbox/
 -- agent/sandbox/workspace/schema.sql
 -- Reference only: table shapes the analyst can read before writing queries.
 CREATE TABLE orders     (id INT, customer_id INT, amount_cents INT, created_at DATE);
-CREATE TABLE customers  (id INT, name TEXT, plan TEXT, signed_up_at DATE);
+CREATE TABLE customers  (id INT, name TEXT, plan TEXT);
 ```
 
-Top-level workspace entries get advertised to the model automatically, so it knows `schema.sql` is there to read. No `agent/sandbox/sandbox.ts` required. A `workspace/` folder keeps the default sandbox and seeds your files into it.
+Top-level workspace entries get advertised to the model automatically, so it knows `schema.sql` is there to read.
+
+## Install the chart dependencies
+
+This example needs a sandbox that runs real binaries. For local development, install and start a Docker-compatible runtime, then check `docker info` in your terminal. The `just-bash` fallback cannot run Python or install matplotlib.
+
+Create `agent/sandbox/sandbox.ts` alongside `workspace/`:
+
+```ts title="agent/sandbox/sandbox.ts"
+import { defineSandbox, type SandboxBackend } from "eve/sandbox";
+import { docker } from "eve/sandbox/docker";
+import { vercel } from "eve/sandbox/vercel";
+
+export default defineSandbox({
+  backend: (): SandboxBackend => (process.env.VERCEL ? vercel() : docker()),
+  async bootstrap({ use }) {
+    const sandbox = await use();
+    const result = await sandbox.run({
+      command:
+        "sudo apt-get update && " +
+        "sudo apt-get install -y python3 python3-matplotlib && " +
+        "python3 -c 'import matplotlib'",
+    });
+    if (result.exitCode !== 0) {
+      throw new Error(`Chart dependency setup failed (${result.exitCode}): ${result.stderr}`);
+    }
+  },
+});
+```
+
+The eve base image includes Python; this bootstrap also installs matplotlib and verifies the import. Package installation needs network access. `bootstrap` runs when eve builds the reusable sandbox template, so later sessions inherit the installed packages. Restart `npm run dev` after adding the sandbox definition.
+
+The configuration uses Docker locally and Vercel Sandbox when deployed on Vercel. To use Vercel Sandbox locally too, set `backend: vercel()` and complete its [credential setup](https://vercel.com/docs/sandbox/concepts/authentication).
 
 ## Compute and chart in the sandbox
 
 The built-in `bash`, `read_file`, and `write_file` tools already target the sandbox. When you write your own analysis steps, grab a live handle with `ctx.getSandbox()`:
 
 ```ts title="agent/tools/chart_series.ts"
+import { randomUUID } from "node:crypto";
 import { defineTool } from "eve/tools";
 import { z } from "zod";
 
 export default defineTool({
   description:
     "Plot a time series to a PNG in the workspace. Pass {date, value} points; " +
-    "returns the chart path.",
+    "returns the chart path and PNG bytes for the client to save.",
   inputSchema: z.object({
     title: z.string(),
-    points: z.array(z.object({ date: z.string(), value: z.number() })),
+    points: z
+      .array(z.object({ date: z.string(), value: z.number() }))
+      .min(1)
+      .max(500),
   }),
   async execute({ title, points }, ctx) {
     const sandbox = await ctx.getSandbox();
+    const directory = `analysis/${randomUUID()}`;
     await sandbox.writeTextFile({
-      path: "analysis/series.json",
+      path: `${directory}/series.json`,
       content: JSON.stringify({ title, points }),
     });
     await sandbox.writeTextFile({
-      path: "analysis/plot.py",
+      path: `${directory}/plot.py`,
       content: [
         "import json, matplotlib",
         "matplotlib.use('Agg')",
         "import matplotlib.pyplot as plt",
-        "d = json.load(open('series.json'))",
-        "plt.plot([p['date'] for p in d['points']], [p['value'] for p in d['points']])",
-        "plt.title(d['title']); plt.savefig('chart.png')",
+        "from datetime import date",
+        "from pathlib import Path",
+        "root = Path(__file__).parent",
+        "d = json.loads((root / 'series.json').read_text())",
+        "plt.plot([date.fromisoformat(p['date']) for p in d['points']], [p['value'] for p in d['points']])",
+        "plt.gcf().autofmt_xdate()",
+        "plt.title(d['title']); plt.tight_layout()",
+        "plt.savefig(root / 'chart.png'); plt.close()",
       ].join("\n"),
     });
-    const root = sandbox.resolvePath("analysis");
-    await sandbox.run({ command: `cd ${JSON.stringify(root)} && python plot.py` });
-    return { chart: `${root}/chart.png` };
+    const result = await sandbox.run({ command: `python3 ${directory}/plot.py` });
+    if (result.exitCode !== 0) {
+      throw new Error(`Chart rendering failed (${result.exitCode}): ${result.stderr}`);
+    }
+    const chart = sandbox.resolvePath(`${directory}/chart.png`);
+    const png = await sandbox.readBinaryFile({ path: chart });
+    if (png === null || png.byteLength === 0) {
+      throw new Error("Chart rendering completed without a PNG file.");
+    }
+    return { chart, title, pngBase64: Buffer.from(png).toString("base64") };
+  },
+  toModelOutput({ chart, title }) {
+    return { type: "json", value: { chart, title, status: "rendered" } };
   },
 });
 ```
 
-This tool shells out to `python` with matplotlib, which the sandbox base image does not preinstall. Install the runtime in sandbox bootstrap (or bake it into a custom image) so `python plot.py` resolves. See [Sandbox](../sandbox) for where bootstrap runs.
+`sandbox.run()` returns `{ exitCode, stdout, stderr }`; a nonzero exit code does not throw automatically. This tool throws on failure and reads the file before returning success. Each call writes to its own directory, so concurrent calls cannot overwrite each other's charts. `toModelOutput` keeps the base64 image out of the model context while the client receives the full output.
 
 Now ask for something past plain SQL. If you skipped Step 4, this still works against the Step 3 sample dataset:
 
 ```text
-Plot total order revenue per customer.
+Plot daily total order revenue in dollars for May 2026 using the sample database and chart_series.
 ```
 
-The model queries for the numbers (the warehouse from Step 4, or the sample dataset if you skipped it), checks `schema.sql` to get the grain right, then calls `chart_series` to render the PNG in `/workspace`.
+The model queries the sample database and calls `chart_series`. The expected daily totals are $42, $15, $99, and $8, on May 1, 3, 4, and 6 respectively.
+
+## Save the chart on your machine
+
+A `/workspace/...` path belongs to the sandbox; it is not a local file or a download URL. The tool reads the PNG out of the sandbox and includes its bytes in the client event stream. To generate and save a chart, create this script in the project root:
+
+```js title="save-chart.mjs"
+import { writeFile } from "node:fs/promises";
+import { Client } from "eve/client";
+
+const client = new Client({ host: process.argv[2] ?? "http://127.0.0.1:2000" });
+const { response } = await client.sessions.create({
+  message:
+    "Use the sample database and chart_series to plot daily order revenue in dollars for May 2026.",
+});
+let saved = false;
+for await (const event of response) {
+  if (event.type !== "action.result") continue;
+  const result = event.data.result;
+  if (result.kind !== "tool-result" || result.toolName !== "chart_series") continue;
+  if (result.isError) throw new Error(JSON.stringify(result.output));
+  const output = result.output;
+  if (!output || typeof output !== "object" || typeof output.pngBase64 !== "string") continue;
+  await writeFile("chart.png", Buffer.from(output.pngBase64, "base64"));
+  saved = true;
+  console.log("Saved chart.png in the current directory.");
+}
+if (!saved) throw new Error("The agent did not return a chart. Check the tool result in eve dev.");
+```
+
+Leave `npm run dev` running, then run the script in another terminal, passing the URL printed by eve:
+
+```bash
+node save-chart.mjs http://127.0.0.1:2000
+```
+
+Open `chart.png` from your project directory. The TUI displays tool results but does not turn sandbox paths into downloads. Step 9 shows how to render the same chart output in the web dashboard. For larger artifacts, store the bytes in your application's file storage and return an access-controlled URL instead of embedding them in session history.
 
 ## Secrets stay out of the sandbox
 
-The sandbox has no `process.env` and no access to your app's secrets. Your warehouse token lives in the app runtime, and firewall brokering is the only path it takes to the warehouse host. It never enters the sandbox process.
+The authored tool runs in the app runtime and explicitly transfers the input points into the sandbox. The Python process receives those points, not your app's environment or credentials. If you added the optional MCP connection, its requests and OAuth credentials stay in the app runtime; the chart tool only passes query results into the sandbox.
 
-The local backend runs the sandbox on your laptop during `eve dev`; on Vercel it runs on Vercel Sandbox. Lifecycle, backends, and network policy are in [Sandbox](../sandbox).
+See [Sandbox](../sandbox) for backend selection, lifecycle, and network policy.
 
 → Next: [Remember definitions](./remember-definitions)
 
