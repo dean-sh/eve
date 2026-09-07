@@ -6,6 +6,7 @@ import { getDefaultCodexTokenBroker } from "#public/models/openai/chatgpt/token-
 export async function ensureChatGptAuth(): Promise<void> {
   const state = await getDefaultCodexTokenBroker().refreshState();
   if (state.kind === "ready") return;
+  if (state.kind === "unavailable") throw new Error(state.reason);
 
   const child = spawn("codex", ["login"], { stdio: "inherit" });
   await new Promise<void>((resolve, reject) => {
@@ -17,6 +18,7 @@ export async function ensureChatGptAuth(): Promise<void> {
   });
 
   const refreshed = await getDefaultCodexTokenBroker().refreshState();
+  if (refreshed.kind === "unavailable") throw new Error(refreshed.reason);
   if (refreshed.kind !== "ready") {
     throw new Error("Codex login completed without a usable ChatGPT session.");
   }

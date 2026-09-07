@@ -127,7 +127,7 @@ function providerOptions(
       hint:
         selectionExplicit && selectedProvider === "chatgpt"
           ? "Current"
-          : "Authenticate through the Codex CLI",
+          : "Requires the Codex CLI: npm install -g @openai/codex",
       checked: (selectionExplicit && selectedProvider === "chatgpt") || undefined,
     },
     {

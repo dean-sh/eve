@@ -245,7 +245,7 @@ function unrefStream(stream: NodeJS.ReadableStream | NodeJS.WritableStream): voi
 function codexUnavailableError(error: unknown): Error {
   if (error instanceof Error && "code" in error && error.code === "ENOENT") {
     return new Error(
-      "ChatGPT subscription authentication requires the Codex CLI. Install or upgrade `codex`, then run `codex login`.",
+      "ChatGPT subscription authentication requires the Codex CLI. Install or upgrade it with `npm install -g @openai/codex`, then run `codex login` and retry.",
     );
   }
   const message = error instanceof Error ? error.message : String(error);

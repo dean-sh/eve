@@ -36,7 +36,7 @@ describe("Codex app-server client", () => {
     });
 
     await expect(client.getAuthStatus({ refreshToken: false })).rejects.toThrow(
-      "requires the Codex CLI",
+      "npm install -g @openai/codex",
     );
   });
 });
