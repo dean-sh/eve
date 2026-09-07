@@ -49,9 +49,9 @@ import { contextStorage, type ContextContainer } from "#context/container.js";
 import {
   ChannelInstrumentationKey,
   OtelTraceEnabledKey,
-  ParentCallIdKey,
   ParentSessionKey,
   ParentTraceContextKey,
+  SessionCallbackKey,
   SessionTraceSeedKey,
 } from "#context/keys.js";
 import { ChannelKey } from "#runtime/sessions/runtime-context-keys.js";
@@ -226,7 +226,7 @@ export function bindInstrumentationRuntime(
       instrumentation: context.get(ChannelInstrumentationKey),
       forwardedTracePolicy: readForwardedTraceAssertion(traceSeed?.forwardedTracePolicy),
       parent,
-      parentLineage: resolveParentLineage(parent, channel, context.get(ParentCallIdKey)),
+      parentLineage: resolveParentLineage(parent, channel, context.get(SessionCallbackKey)),
       parentTraceContext,
       traceSeed,
     };

@@ -1119,7 +1119,6 @@ describe("turnWorkflow", () => {
           kind: "agent-invoke",
           invocationId: "call-1",
           input: expect.any(Object),
-          parentActionCallId: "call-1",
         },
       }),
       expect.objectContaining({

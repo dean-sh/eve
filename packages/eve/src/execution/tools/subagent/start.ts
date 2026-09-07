@@ -12,7 +12,6 @@ import type { DispatchOutcome, RuntimeSession } from "#subagents/handle-dispatch
 import { startLocalSubagent } from "#subagents/start-local.js";
 import { startRemoteSubagent } from "#subagents/start-remote.js";
 import { buildSubagentRunInput, type SubagentInputSource } from "#subagents/tool.js";
-import type { AgentChildTraceDispatch } from "#tracing/agent-invocation-coordinator.js";
 
 export type SubagentStartTarget =
   | {
@@ -47,7 +46,6 @@ export async function startSubagent(input: {
   readonly session: RuntimeSession;
   readonly taskId?: string;
   readonly target: SubagentStartTarget;
-  readonly traceDispatch: AgentChildTraceDispatch;
 }): Promise<DispatchOutcome> {
   switch (input.target.kind) {
     case "local":
@@ -69,7 +67,6 @@ export async function startSubagent(input: {
         session: input.session,
         source: input.target.source,
         taskId: input.taskId,
-        traceDispatch: input.traceDispatch,
       });
     case "remote":
       return startRemoteSubagent({
@@ -85,7 +82,6 @@ export async function startSubagent(input: {
         activityObserver: input.activityObserver,
         session: input.session,
         taskId: input.taskId,
-        traceDispatch: input.traceDispatch,
       });
     default: {
       const _exhaustive: never = input.target;

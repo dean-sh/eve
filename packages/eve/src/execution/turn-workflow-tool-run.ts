@@ -24,10 +24,6 @@ import type {
   RuntimeSubagentResult,
   RuntimeToolResultActionResult,
 } from "#shared/action-types.js";
-import {
-  readAgentInvocationParent,
-  withAgentInvocationParent,
-} from "#tracing/agent-invocation-request.js";
 
 interface HandlerInput<T> {
   readonly callbackMetadataUrl: string;
@@ -138,14 +134,7 @@ export async function handleWorkflowToolRunRequest(
           accumulateUsage: message.from.resultKind !== "subagent",
           ownerId: message.from.runId,
           replyTo: message.replyTo,
-          request:
-            message.request.kind === "agent-invoke"
-              ? withAgentInvocationParent(
-                  message.request,
-                  readAgentInvocationParent(message.request) ??
-                    (message.from.resultKind === "subagent" ? message.from.callId : undefined),
-                )
-              : message.request,
+          request: message.request,
         },
         requestContext(input),
       ),

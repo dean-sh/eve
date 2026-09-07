@@ -49,9 +49,6 @@ describe("startLocalSubagent", () => {
       sandboxSessionId: "parent-session",
       session: {} as never,
       source: { description: "Research", type: "local" },
-      traceDispatch: {
-        originAudience: "private",
-      },
     });
 
     expect(createWorkflowRuntime).toHaveBeenCalledOnce();

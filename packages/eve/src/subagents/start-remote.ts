@@ -10,7 +10,7 @@ import { createLogger, logError } from "#internal/logging.js";
 import type { RuntimeRemoteAgentDispatchRequest } from "#shared/action-types.js";
 import type { CompiledBundle } from "#runtime/sessions/runtime-context-keys.js";
 import { buildAgentInvocationParent } from "#protocol/agent-invocation-trace.js";
-import type { AgentChildTraceDispatch } from "#tracing/agent-invocation-coordinator.js";
+import { readAgentChildTrace } from "#tracing/agent-child-trace.js";
 
 const log = createLogger("execution.subagent-start-remote");
 
@@ -30,9 +30,9 @@ export async function startRemoteSubagent(input: {
   readonly activityObserver?: Parameters<typeof startRemoteAgentSession>[0]["activityObserver"];
   readonly session: RuntimeSession;
   readonly taskId?: string;
-  readonly traceDispatch: AgentChildTraceDispatch;
 }): Promise<DispatchOutcome> {
   const { action } = input;
+  const trace = readAgentChildTrace();
   const activityObserver = deriveChildActivityObserverConfig({
     activityObserver: input.activityObserver,
     callId: action.callId,
@@ -89,7 +89,7 @@ export async function startRemoteSubagent(input: {
       auth: input.auth,
       callbackBaseUrl,
       callbackToken: input.parentContinuationToken,
-      originAudience: input.traceDispatch.originAudience,
+      originAudience: trace?.originAudience,
       initiatorAuth: input.initiatorAuth,
       operationId: operation.id,
       parent: buildAgentInvocationParent({
@@ -99,7 +99,7 @@ export async function startRemoteSubagent(input: {
         turnId: input.batchEvent.turnId,
         turnSequence: input.batchEvent.sequence,
       }),
-      parentTraceContext: input.traceDispatch.parentTraceContext,
+      parentTraceContext: trace?.parentTraceContext,
       activityObserver,
       remote: resolvedRemote,
       session: input.session,
