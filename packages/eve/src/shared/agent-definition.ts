@@ -204,6 +204,8 @@ export interface AgentLimitsDefinition {
  * These options are unstable and may change or be removed in any release.
  */
 export interface AgentExperimentalDefinition {
+  /** Append task context as user-role messages after history to improve prompt cache reuse. */
+  readonly taskContextAtTail?: boolean;
   /**
    * Reads instrumentation from an `instrumentation/` directory of providers
    * rather than a single `agent/instrumentation.ts` config object.

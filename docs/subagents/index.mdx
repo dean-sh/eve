@@ -5,6 +5,17 @@ description: "Delegate work to root-agent copies or declared specialists with th
 
 eve supports two ways to delegate work: the root-only built-in `agent` tool, which starts or continues a copy of the root agent, and declared subagents, which are specialists with their own directories. Use a subagent to run independent work in parallel, narrow the available tools, or give a task to a specialist.
 
+## Experimental task context placement
+
+Set `experimental: { taskContextAtTail: true }` in the parent agent definition to
+append task status and task-delivery context after conversation history. This
+keeps changing status out of the reusable prompt prefix. The default is off.
+
+This changes context placement and, on the first model step, its role from system
+to user. Authored system instructions, scheduled instructions, and tool-approval
+ordering are unchanged. Evaluate model behavior before enabling it in production;
+provider cache savings have not yet been measured.
+
 ## The built-in `agent` tool
 
 The root session receives `agent` by default. The model calls it to delegate a task to a new copy of the root agent or continue an existing copy:

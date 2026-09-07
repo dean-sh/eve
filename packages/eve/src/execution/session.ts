@@ -125,6 +125,7 @@ function createSessionAgent(
   const base = {
     compactionModelReference: turnAgent.compactionModel,
     reasoning: turnAgent.reasoning,
+    taskContextAtTail: turnAgent.taskContextAtTail,
     system,
     tools,
   };
