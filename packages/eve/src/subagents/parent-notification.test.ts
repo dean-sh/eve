@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { ContextContainer } from "#context/container.js";
 import { serializeContext } from "#context/serialize.js";
-import { SessionCallbackKey, SessionIdKey } from "#context/keys.js";
+import { SessionCallbackKey, SessionIdKey, TurnParentCallIdKey } from "#context/keys.js";
 import { BundleKey, ChannelKey } from "#runtime/sessions/runtime-context-keys.js";
 import { getCompiledRuntimeAgentBundle } from "#runtime/sessions/compiled-agent-cache.js";
 import {
@@ -466,6 +466,7 @@ describe("turn caller binding", () => {
         },
       }),
     ).resolves.toEqual({
+      [TurnParentCallIdKey.name]: "call-new",
       [ChannelKey.name]: {
         kind: SUBAGENT_ADAPTER_KIND,
         state: {
@@ -493,6 +494,7 @@ describe("turn caller binding", () => {
         serializedContext: {},
       }),
     ).resolves.toEqual({
+      [TurnParentCallIdKey.name]: "call-new",
       [SessionCallbackKey.name]: {
         callId: "call-new",
         subagentName: "research",
@@ -504,6 +506,7 @@ describe("turn caller binding", () => {
 
   it("rebinds local adapter forwarding to the current task", async () => {
     const serializedContext = {
+      [TurnParentCallIdKey.name]: "call-old",
       [ChannelKey.name]: {
         kind: SUBAGENT_ADAPTER_KIND,
         state: {
@@ -526,6 +529,7 @@ describe("turn caller binding", () => {
         serializedContext,
       }),
     ).resolves.toMatchObject({
+      [TurnParentCallIdKey.name]: "call-new",
       [ChannelKey.name]: {
         state: { callId: "call-new", parentContinuationToken: "task-new", taskId: "task-new" },
       },
@@ -548,6 +552,7 @@ describe("turn caller binding", () => {
         serializedContext: {},
       }),
     ).resolves.toEqual({
+      [TurnParentCallIdKey.name]: "call-new",
       [SessionCallbackKey.name]: {
         callId: "call-new",
         subagentName: "research",

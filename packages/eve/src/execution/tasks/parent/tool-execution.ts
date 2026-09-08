@@ -511,7 +511,7 @@ class BackgroundToolExecutionScope implements BackgroundToolExecutor {
 
     this.steeringAgents.add(handle.identity.id);
     try {
-      await cancelOwnedTask({
+      const settled = await cancelOwnedTask({
         cancelOwnedWork: cancelBackgroundAgentTask,
         entry,
         serializedContext: serializeContext(ctx),
@@ -520,6 +520,9 @@ class BackgroundToolExecutionScope implements BackgroundToolExecutor {
       // Other calls in this batch may have changed the store while cancellation
       // was pending. Release only the old owner, then claim the current handle.
       this.applyAgentHandleCommand({ kind: "release-owner", ownerId: handle.ownerId });
+      if (settled.status !== "cancelled") {
+        throw new Error("The agent finished before steering. Start a new task without agentId.");
+      }
       return this.applyAgentHandleCommand(command);
     } finally {
       this.steeringAgents.delete(handle.identity.id);

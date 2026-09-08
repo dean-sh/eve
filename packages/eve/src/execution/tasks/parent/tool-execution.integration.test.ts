@@ -159,6 +159,25 @@ describe("background subagent steering", () => {
     expect(getAgentHandleStore((await scope.commit()).state)?.handles).toEqual([handle]);
   });
 
+  it("does not resume a child that finished before steering", async () => {
+    const scope = await createScope();
+    vi.mocked(cancelOwnedTask).mockResolvedValue({
+      ...cancelledView,
+      status: "completed",
+      lastOutput: { type: "result", data: "Done" },
+    });
+    await expect(scope.execute()).rejects.toThrow("finished before steering");
+    expect(startTaskRun).not.toHaveBeenCalled();
+    expect(getAgentHandleStore((await scope.commit()).state)?.handles[0]).toMatchObject({
+      identity,
+      phase: "available",
+    });
+    const fresh = await scope.execute("fresh-call", "");
+    expect(fresh).toMatchObject({ status: "working" });
+    expect(fresh).not.toHaveProperty("agentId", identity.id);
+    expect(startTaskRun).toHaveBeenCalledTimes(1);
+  });
+
   it("does not cancel a task outside the parent task index", async () => {
     const scope = await createScope(createSession(false));
     await expect(scope.execute()).rejects.toThrow("AGENT_BUSY");
