@@ -295,6 +295,7 @@ export async function workflowEntry(input: WorkflowEntryInput): Promise<Workflow
       return outcome.result;
     }
     return await finalizeExpiredSession({
+      reason: "expired",
       caller: crashCleanupState.caller,
       driverWritable,
       mode,
@@ -541,6 +542,13 @@ async function runDriverLoop(input: {
     let action: TurnDriverAction = await runTurn(input.initialInput);
 
     while (true) {
+      if (bufferedSessionControls.includes("expired")) {
+        return {
+          kind: "expired",
+          serializedContext: stateCursor.serializedContext,
+          sessionState: stateCursor.sessionState,
+        };
+      }
       if (action.kind === "done") {
         return {
           kind: "result",
@@ -630,10 +638,11 @@ async function runDriverLoop(input: {
         };
       }
 
-      if (next.kind === "reset") {
+      if (next.kind === "reset" || next.kind === "closed") {
         return {
           kind: "result",
           result: await finalizeExpiredSession({
+            reason: next.kind,
             caller: input.crashCleanupState.caller,
             driverWritable: input.driverWritable,
             mode: input.mode,
@@ -647,20 +656,6 @@ async function runDriverLoop(input: {
       if (next.kind === "clear" || next.kind === "compact") {
         action = await runTurn({ kind: next.kind });
         continue;
-      }
-
-      if (next.kind === "closed") {
-        return {
-          kind: "result",
-          result: await finalizeExpiredSession({
-            caller: input.crashCleanupState.caller,
-            driverWritable: input.driverWritable,
-            mode: input.mode,
-            serializedContext: stateCursor.serializedContext,
-            sessionState: stateCursor.sessionState,
-            terminalState: input.crashCleanupState,
-          }),
-        };
       }
 
       if (next.kind === "cancel-turn") {
