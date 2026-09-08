@@ -176,8 +176,11 @@ authorization machinery for requester identity, token caching, callback completi
 after sign-in. The execution runtime owns the wait: an agent returns to its model after authorization,
 while a workflow retries the interrupted step and continues the authored body.
 
-The workflow body calls `await readRepository(ctx, repository)`. Do not return the token from the
-helper: step results enter the workflow's durable history. eve's token cache stays inside the step.
+The workflow body calls `await readRepository(ctx, repository)`.
+
+> [!WARNING]
+> Do not return the token from the helper: step results enter the workflow's durable history.
+> eve's token cache stays inside the step.
 
 When sign-in is required, the step attempt ends and the workflow waits on its own callback hook,
 without holding compute. The channel renders the sign-in challenge. After the callback, eve retries
@@ -197,13 +200,9 @@ not rely on the launching agent turn still being active. Cancelling an authoriza
 its callback. Cancellation uses the existing turn or task cancellation path rather than a separate
 authorization completion event.
 
-Background workflow auth requires a session driver that supports displaying workflow-task
-sign-in events. A conversation created before this support was deployed keeps its older driver,
-even when a later turn runs newer code. The launching turn reads the driver's advertised support.
-If it is absent, calling `ctx.getToken` or `ctx.requireAuth` in the background workflow fails without
-retrying or calling the auth provider, with an instruction to start a new session. Background
-workflows that do not use these methods continue to work; blocking workflow tools use their owning
-turn's handler.
+Background workflow authorization requires a new session after upgrading. In older sessions,
+`ctx.getToken` and `ctx.requireAuth` fail immediately with an instruction to start a new session.
+Blocking workflows and background workflows without auth are unaffected.
 
 ## Ask a human: `ctx.ask`
 

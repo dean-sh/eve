@@ -1,10 +1,12 @@
 import { defineEval } from "eve/evals";
+
 import { runStepAuth } from "./agent-probe.shared.ts";
 
 export default defineEval({
-  description: "Workflow step getToken parks for sign-in and resumes under the requester.",
+  description: "A missing token triggers sign-in through ctx.getToken, then the step succeeds.",
   timeoutMs: 90_000,
+
   async test(t) {
-    await runStepAuth(t, false);
+    await runStepAuth(t, "IMPLICIT");
   },
 });

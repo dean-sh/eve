@@ -274,7 +274,8 @@ export async function taskRunWorkflow(input: TaskRunWorkflowInput): Promise<void
     }
 
     const previous = view;
-    if (!(await transitionTask(command))) return;
+    const accepted = await transitionTask(command);
+    if (!accepted) return;
     if (command.kind === "cancel") {
       bodyController.abort(new Error(`Task ${view.taskId} was cancelled.`));
       if (bodyReader === undefined) executorSettled = true;
