@@ -94,6 +94,7 @@ export default cases.map(({ parentActive, steering, description }) =>
           ),
         );
 
+        const interruptedParent = parent;
         parent = await parent.session.start(
           steering
             ? "Actually, use STEERED instead of ORIGINAL."
@@ -103,15 +104,10 @@ export default cases.map(({ parentActive, steering, description }) =>
         await t.require(parent.sessionId, equals(sessionId));
 
         if (parentActive) {
-          // start() observes from the current cursor, including the turn
-          // cancelled by this steering message before its replacement begins.
-          const cancelled = await parent.result();
+          const cancelled = await interruptedParent.result();
           cancelled.notEvent("turn.failed");
           cancelled.event("turn.cancelled", { count: 1 });
           parentTurns.push(cancelled);
-          parent = t.target.watchTurn(sessionId, {
-            startIndex: parent.session.state!.streamIndex,
-          });
         }
         // Observe through the result-bearing task wake, not just the parent's
         // acknowledgment of the steering message or an AGENT_BUSY failure wake.
@@ -133,9 +129,12 @@ export default cases.map(({ parentActive, steering, description }) =>
           });
         }
 
-        const calls = parentTurns.flatMap((turn) =>
-          turn.events.filter((event) => event.type === "subagent.called"),
-        );
+        const calls = [
+          called,
+          ...parentTurns.flatMap((turn) =>
+            turn.events.filter((event) => event.type === "subagent.called"),
+          ),
+        ];
         await t.require(
           calls,
           satisfies(
