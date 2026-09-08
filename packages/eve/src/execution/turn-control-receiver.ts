@@ -222,6 +222,10 @@ export class TurnControlReceiver {
     await this.commandInbox.rekeyContinuation(request.continuationToken);
 
     let delivery = this.takeInputResponseDelivery();
+    // A between-step poll must not park the model waiting for future input.
+    if (delivery === undefined && request.bufferedOnly === true) {
+      delivery = { kind: "deliver", payloads: [] };
+    }
     while (delivery === undefined) {
       const winner = await Promise.race([
         this.getControlPromise().then((value) => ({ kind: "control" as const, value })),

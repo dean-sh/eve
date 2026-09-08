@@ -86,6 +86,7 @@ describe("createSession", () => {
         turnAgent,
       });
       expect(session.agent.taskEventDelivery).toBe(taskEventDelivery);
+      expect(projectToDurableSession(session).agent.taskEventDelivery).toBe(taskEventDelivery);
       const hydrated = hydrateDurableSession({
         durable: projectToDurableSession(session),
         turnAgent,

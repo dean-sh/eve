@@ -283,6 +283,93 @@ describe("turnWorkflow", () => {
     );
   });
 
+  it.each([
+    { enabled: false, supported: true },
+    { enabled: true, supported: false },
+    { enabled: true, supported: true },
+  ])(
+    "services task launches before the next model step (event delivery=$enabled, driver=$supported)",
+    async ({ enabled, supported }) => {
+      const shouldPoll = enabled && supported;
+      const state = withRunningChildren(createSessionState(), []);
+      const sessionState: DurableSessionState = {
+        ...state,
+        snapshot: {
+          version: 1,
+          session: {
+            ...state.snapshot!.session,
+            agent: { system: "", taskEventDelivery: enabled },
+          },
+        },
+      };
+      const launchedState = withRunningChildren(sessionState, [
+        { callId: "worker-1", sessionId: "child-1" },
+      ]);
+      const delivery = {
+        kind: "deliver" as const,
+        payloads: [
+          {
+            task: {
+              agentRequests: [
+                {
+                  taskId: "task-1",
+                  replyTo: "agent-reply",
+                  request: {
+                    kind: "agent-invoke" as const,
+                    invocationId: "worker-1",
+                    input: { message: "Review", target: "worker" },
+                  },
+                },
+              ],
+            },
+          },
+        ],
+      };
+      installInbox([
+        { kind: "driver-delivery", requestId: "turn-token:inbox:delivery:0", delivery },
+        {
+          kind: "driver-delivery",
+          requestId: "turn-token:inbox:delivery:1",
+          delivery,
+        },
+        {
+          kind: "driver-delivery",
+          requestId: "turn-token:inbox:delivery:2",
+          delivery: { kind: "deliver", payloads: [] },
+        },
+      ]);
+      vi.mocked(routeDeliverToChildren).mockResolvedValue({
+        kind: "continue",
+        remainder: undefined,
+        serializedContext: { dispatched: true },
+        sessionState: launchedState,
+      });
+      vi.mocked(turnStep)
+        .mockResolvedValueOnce({ action: "continue", serializedContext: {}, sessionState })
+        .mockImplementationOnce(async (input) => {
+          expect(input.sessionState).toBe(shouldPoll ? launchedState : sessionState);
+          expect(routeDeliverToChildren).toHaveBeenCalledTimes(shouldPoll ? 3 : 0);
+          return {
+            action: "done",
+            output: "done",
+            serializedContext: {},
+            sessionState: input.sessionState,
+          };
+        });
+      const { input } = createInput({
+        driverCapabilities: { bufferedDeliveries: supported ? true : undefined, turnInbox: true },
+        sessionState,
+      });
+      await turnWorkflow(input);
+      if (shouldPoll) {
+        expect(resumeHookMock).toHaveBeenCalledWith(
+          "turn-token",
+          expect.objectContaining({ kind: "turn-delivery-request", bufferedOnly: true }),
+        );
+      }
+    },
+  );
+
   it("parks when an authorization is pending", async () => {
     const sessionState = createSessionState();
     vi.mocked(turnStep).mockResolvedValueOnce({

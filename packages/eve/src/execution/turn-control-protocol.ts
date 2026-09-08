@@ -26,6 +26,7 @@ export type TurnControlPayload =
       readonly inboxToken: string;
       readonly kind: "turn-delivery-request";
       readonly requestId: string;
+      readonly bufferedOnly?: boolean;
     }
   | { readonly kind: "turn-delivery-accepted"; readonly requestId: string }
   | { readonly kind: "turn-delivery-cancelled"; readonly requestId: string };

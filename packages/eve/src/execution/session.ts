@@ -201,7 +201,7 @@ export function mintSubagentContinuationToken(suffix?: string): string {
  */
 export function projectToDurableSession(session: HarnessSession): DurableSession {
   const durable: {
-    agent: { system: string };
+    agent: DurableSession["agent"];
     compaction?: {
       lastKnownInputTokens?: number;
       lastKnownPromptMessageCount?: number;
@@ -217,7 +217,12 @@ export function projectToDurableSession(session: HarnessSession): DurableSession
     taskId?: string;
     workflowMaxSubagents?: number;
   } = {
-    agent: { system: session.agent.system },
+    agent: {
+      system: session.agent.system,
+      ...(session.agent.taskEventDelivery !== undefined
+        ? { taskEventDelivery: session.agent.taskEventDelivery }
+        : {}),
+    },
     continuationToken: session.continuationToken,
     history: session.history,
     sessionId: session.sessionId,

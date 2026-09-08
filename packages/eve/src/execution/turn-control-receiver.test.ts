@@ -39,6 +39,26 @@ describe("TurnControlReceiver", () => {
     createHookMock.mockReset();
   });
 
+  it("answers an empty between-step poll without consuming queued user messages", async () => {
+    installControlHook([
+      { ...deliveryRequest("poll-1"), bufferedOnly: true },
+      { kind: "turn-delivery-accepted", requestId: "poll-1" },
+      parkResult(),
+    ]);
+    const message: DeliverHookPayload = { kind: "deliver", payloads: [{ message: "follow-up" }] };
+    const buffered = [message];
+    await runReceiver(buffered);
+    expect(forwardTurnDeliveryStep).toHaveBeenCalledWith({
+      inboxToken: "turn-inbox",
+      payload: {
+        kind: "driver-delivery",
+        requestId: "poll-1",
+        delivery: { kind: "deliver", payloads: [] },
+      },
+    });
+    expect(buffered).toEqual([message]);
+  });
+
   it("forwards a buffered delivery and consumes it once the turn accepts", async () => {
     const delivery: DeliverHookPayload = {
       kind: "deliver",
@@ -318,7 +338,9 @@ function runReceiver(
   return receiver.waitForAction().finally(() => receiver.dispose());
 }
 
-function deliveryRequest(requestId: string): TurnControlPayload {
+function deliveryRequest(
+  requestId: string,
+): Extract<TurnControlPayload, { kind: "turn-delivery-request" }> {
   return {
     continuationToken: "http:test",
     inboxToken: "turn-inbox",

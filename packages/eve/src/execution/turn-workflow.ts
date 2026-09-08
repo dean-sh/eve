@@ -47,6 +47,7 @@ import type { RuntimeActionResult } from "#shared/action-types.js";
 import { handleWorkflowToolRunMessage } from "#execution/turn-workflow-tool-run.js";
 
 const TASK_MODE_WAIT_ERROR_MESSAGE = "Task mode cannot wait for follow-up input (`next: null`).";
+const MAX_DELIVERIES_PER_STEP = 64;
 
 export type { TurnWorkflowInput };
 
@@ -273,6 +274,29 @@ export async function runTurnOwnedWorkflow(
       }
 
       await cursor.adopt(result);
+      if (
+        input.driverCapabilities?.bufferedDeliveries === true &&
+        cursor.sessionState.snapshot?.session.agent.taskEventDelivery === true
+      ) {
+        // Only the turn owns this snapshot. Route task launches between model
+        // steps so an in-flight step cannot overwrite newly dispatched handles.
+        const serviced = await waitForRuntimeActionResults({
+          bufferedDeliveries,
+          cancellation,
+          cursor,
+          inboxToken: inbox.token,
+          initialAcceptedAtMs: undefined,
+          initialResults: [],
+          nextDeliveryRequestId,
+          readers,
+          pendingCallIds: [],
+          pollDeliveries: true,
+        });
+        if (serviced === "cancel-turn") {
+          await finishCancelledTurn({ bufferedDeliveries, cancellation, cursor });
+          return;
+        }
+      }
       nextStepInput = undefined;
     }
   } catch (error) {
@@ -337,8 +361,11 @@ async function waitForRuntimeActionResults(input: {
   readonly nextDeliveryRequestId: () => string;
   readonly pendingCallIds: readonly string[];
   readonly readers: TurnReaders;
+  readonly pollDeliveries?: boolean;
 }): Promise<AcceptedRuntimeActionBatch | "cancelled" | "cancel-turn"> {
   let pendingDeliveryRequest: string | undefined;
+  let polledDeliveries = input.pollDeliveries !== true;
+  let deliveredCount = 0;
   const results: RuntimeActionResult[] = [...input.initialResults];
   const acceptedAtMsByCallId = new Map<string, number>();
   if (input.initialAcceptedAtMs !== undefined) {
@@ -352,7 +379,7 @@ async function waitForRuntimeActionResults(input: {
       pendingCallIds: input.pendingCallIds,
       results,
     });
-    if (ready !== undefined) {
+    if (ready !== undefined && polledDeliveries) {
       if (pendingDeliveryRequest !== undefined) {
         // The entry may already be racing public input against this wait.
         // Cancellation keeps that input available for the next parent turn.
@@ -369,13 +396,17 @@ async function waitForRuntimeActionResults(input: {
       };
     }
 
-    if (input.cursor.sessionState.hasProxyInputRequests && pendingDeliveryRequest === undefined) {
+    if (
+      (!polledDeliveries || input.cursor.sessionState.hasProxyInputRequests) &&
+      pendingDeliveryRequest === undefined
+    ) {
       pendingDeliveryRequest = input.nextDeliveryRequestId();
       await input.cursor.send({
         continuationToken: input.cursor.sessionState.continuationToken,
         inboxToken: input.inboxToken,
         kind: "turn-delivery-request",
         requestId: pendingDeliveryRequest,
+        bufferedOnly: !polledDeliveries ? true : undefined,
       });
     }
 
@@ -462,6 +493,13 @@ async function waitForRuntimeActionResults(input: {
     if (value.kind === "driver-delivery" && value.requestId === pendingDeliveryRequest) {
       await input.cursor.send({ kind: "turn-delivery-accepted", requestId: value.requestId });
       pendingDeliveryRequest = undefined;
+      // Drain the buffered launch batch without paying for a model call per
+      // child. Bound the drain so a busy child cannot starve the parent.
+      deliveredCount += 1;
+      polledDeliveries =
+        input.pollDeliveries !== true ||
+        value.delivery.payloads.length === 0 ||
+        deliveredCount >= MAX_DELIVERIES_PER_STEP;
 
       const routed = await routeDeliverToChildren({
         delivery: value.delivery,

@@ -89,6 +89,7 @@ export interface DurableSession {
   readonly workflowMaxSubagents?: number;
   readonly agent: {
     readonly system: string;
+    readonly taskEventDelivery?: boolean;
   };
   readonly compaction?: {
     readonly lastKnownInputTokens?: number;
