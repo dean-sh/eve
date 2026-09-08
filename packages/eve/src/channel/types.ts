@@ -67,6 +67,8 @@ export type ClearSessionResult =
  * zero-based position in the session's turn order (the first turn is `0`).
  */
 export interface SessionTurn {
+  /** Parent tool call driving this delegated turn, including a continuation or steering call. */
+  readonly parentCallId?: string;
   readonly id: string;
   readonly sequence: number;
 }

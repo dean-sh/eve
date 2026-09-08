@@ -5,6 +5,7 @@ import {
   type Session,
   SessionIdKey,
   SessionKey,
+  TurnParentCallIdKey,
 } from "#context/keys.js";
 import type { FrameworkContextProvider } from "#context/provider.js";
 import { getHarnessEmissionState } from "#harness/emission.js";
@@ -24,7 +25,13 @@ export const sessionProvider: FrameworkContextProvider<Session> = {
         },
         parent: ctx.get(ParentSessionKey),
         sessionId: ctx.require(SessionIdKey),
-        turn: { id: turnId, sequence: emission.sequence },
+        turn: {
+          id: turnId,
+          sequence: emission.sequence,
+          ...(ctx.get(TurnParentCallIdKey) === undefined
+            ? {}
+            : { parentCallId: ctx.get(TurnParentCallIdKey) }),
+        },
       }),
     };
   },
