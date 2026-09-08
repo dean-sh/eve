@@ -6,14 +6,11 @@ const validated = defineState("task-reporting.inventory-validated", () => false)
 
 export default defineTool({
   description: "Validate the two warehouse inventories or publish their validated report.",
-  inputSchema: z.discriminatedUnion("action", [
-    z.strictObject({
-      action: z.literal("validate"),
-      first: z.string(),
-      second: z.string(),
-    }),
-    z.strictObject({ action: z.literal("publish") }),
-  ]),
+  inputSchema: z.strictObject({
+    action: z.enum(["validate", "publish"]),
+    first: z.string().optional(),
+    second: z.string().optional(),
+  }),
   execute(input) {
     if (input.action === "validate") {
       if (input.first !== "oranges" || input.second !== "pears") {
