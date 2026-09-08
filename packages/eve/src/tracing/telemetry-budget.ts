@@ -3,6 +3,7 @@ export const TELEMETRY_CONTEXT_BYTES = 64 * 1024;
 export const TELEMETRY_CONTEXT_ATTRIBUTES = 64;
 export const TELEMETRY_VALUE_NODES = 2048;
 export const TELEMETRY_VALUE_DEPTH = 32;
+export const TELEMETRY_PRINCIPAL_ID_BYTES = 1024;
 
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();

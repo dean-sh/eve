@@ -120,6 +120,13 @@ Step spans report `agent.usage.*` totals; model spans also carry
 output content, including errors reconstructed after a worker replacement.
 Metadata-only capture retains failure status without those details.
 
+Agent Runs activation metadata includes bounded principal summaries:
+
+- `agent.principal.current.type` and `agent.principal.current.id` describe the current caller.
+- `agent.principal.initiator.type` and `agent.principal.initiator.id` describe the authenticated principal that created the root session. The initiator remains fixed when later turns have a different caller.
+
+Types are limited to `user`, `service`, `runtime`, `app`, `anonymous`, `local-dev`, `none`, and `other`. Types are emitted for every audience. Principal IDs follow the existing trace-content audience policy: public turns include them, private and hosted-unknown turns omit them, and unknown turns under `eve dev` include them. A `none` principal has no ID. Empty IDs and IDs larger than 1 KiB of UTF-8 data are omitted, not truncated; authentication records are unchanged. eve does not copy other authentication fields, such as claims, email attributes, issuers, or subjects, into these summaries.
+
 ## Runtime context
 
 _Runtime context_ is an [AI SDK concept](https://ai-sdk.dev/docs/reference/ai-sdk-core/stream-text): a user-defined object that flows through a generation lifecycle. eve exposes it through `events["step.started"]`, a callback that runs once eve has assembled the model input for an attempt and returns `{ runtimeContext }`. Because eve registers the AI SDK's OpenTelemetry integration with runtime context enabled, those returned values ride onto the model-call span and its children. The field is named `runtimeContext`, not `metadata`, because AI SDK v7 carries per-call attributes on runtime context rather than a dedicated metadata field.
@@ -176,13 +183,6 @@ ai.eve.turn  {eve.session.id}
 ```
 
 eve creates the `ai.eve.turn` parent span per turn and passes enriched telemetry to the AI SDK so model calls and tool executions are traced automatically. Session, turn, step, and channel context is injected as the framework half of the runtime context (`eve.version`, `eve.session.id`, `eve.environment`, `eve.turn.id`, `eve.turn.sequence`, `eve.step.index`, `eve.channel.kind`) and rides onto the spans alongside any values your `events["step.started"]` callback returns under `runtimeContext`.
-
-Agent Runs turn metadata includes bounded identity summaries from the turn's execution span:
-
-- `agent.principal.current.type` and `agent.principal.current.id` describe the current caller.
-- `agent.principal.initiator.type` and `agent.principal.initiator.id` describe the authenticated principal that created the root session. The initiator remains fixed when later turns have a different caller.
-
-Types are limited to `user`, `service`, `runtime`, `app`, `anonymous`, `local-dev`, `none`, and `other`. Types are emitted for every audience. Principal IDs follow the existing trace-content audience policy: public turns include them, private and hosted-unknown turns omit them, and unknown turns under `eve dev` include them. A `none` principal has no ID. Claims, email addresses, issuers, subjects, and channel attributes are not added to trace state or span attributes.
 
 Set `traceChannelRequests: true` on `defineInstrumentation` to also wrap each inbound channel HTTP request in a single OpenTelemetry `SERVER` span named for the registered route, which parents the turn tree above (and any `hook.resume` and outgoing HTTP spans):
 
