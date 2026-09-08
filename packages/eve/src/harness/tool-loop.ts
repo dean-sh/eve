@@ -3212,6 +3212,17 @@ async function maybeCompact(input: {
     );
   }
 
+  if (session.agent.taskEventDelivery) {
+    messages = messages.filter(
+      (message) =>
+        !(
+          message.role === "user" &&
+          typeof message.content === "string" &&
+          message.content.startsWith(`${TASK_RECOVERY_CONTEXT_LABEL}\n`)
+        ),
+    );
+  }
+
   const canonical = canonicalizeMemoryRecords(messages);
   const ordinary =
     input.historyProjector?.({ messages: canonical.ordinary, state: session.state }) ??
@@ -3231,14 +3242,6 @@ async function maybeCompact(input: {
   messages = [...canonical.memory, ...compactedOrdinary];
 
   if (session.agent.taskEventDelivery) {
-    messages = messages.filter(
-      (message) =>
-        !(
-          message.role === "user" &&
-          typeof message.content === "string" &&
-          message.content.startsWith(`${TASK_RECOVERY_CONTEXT_LABEL}\n`)
-        ),
-    );
     const taskRecovery = createTaskRecoveryContext(session.state);
     if (taskRecovery !== undefined) {
       messages = [{ role: "user", content: taskRecovery }, ...messages];

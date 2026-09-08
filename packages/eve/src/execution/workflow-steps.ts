@@ -277,10 +277,12 @@ export async function turnStep(rawInput: TurnStepInput): Promise<DurableStepResu
     });
     if (taskContext !== undefined) {
       ctx.set(TurnTaskDeliveryKey, taskContext.phase);
-      resolved = {
-        ...resolved,
-        context: [...(resolved.context ?? []), taskContext.context],
-      };
+      if (!effectiveAgent.turnAgent.taskEventDelivery) {
+        resolved = {
+          ...resolved,
+          context: [...(resolved.context ?? []), taskContext.context],
+        };
+      }
     }
   }
 

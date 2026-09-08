@@ -27,7 +27,7 @@ import {
   TurnTaskStateKey,
 } from "#context/keys.js";
 import { BundleKey, ChannelKey } from "#runtime/sessions/runtime-context-keys.js";
-import { serializeContext } from "#context/serialize.js";
+import { deserializeContext, serializeContext } from "#context/serialize.js";
 import { getPendingCoordinationBatch, setPendingCoordinationBatch } from "#harness/coordination.js";
 import { TurnCancelledError } from "#harness/turn-cancellation.js";
 import { getPendingAuthorization, setPendingAuthorization } from "#harness/authorization.js";
@@ -2184,74 +2184,89 @@ describe("turnStep", () => {
     });
   });
 
-  it("sets task-delivery provenance only when the runtime supplies owned task state", async () => {
-    const observedTaskDeliveries: unknown[] = [];
-    const observedTaskStates: unknown[] = [];
-    const metadata = { kind: "report-probe", name: "report_probe" } as const;
-    const session = createStubSession({
-      state: {
-        "eve.tasks": {
-          tasks: [
-            {
-              taskInboxToken: "task-token",
-              createdByTurnId: "turn-parent",
-              metadata,
-              taskId: "task_1",
-              taskRunId: "run_1",
-              terminalView: {
-                lastOutput: { data: { result: "done" }, type: "result" },
+  it.each([false, true])(
+    "sets owned task-delivery provenance (taskEventDelivery=%s)",
+    async (taskEventDelivery) => {
+      const observedInputs: unknown[] = [];
+      const observedTaskDeliveries: unknown[] = [];
+      const observedTaskStates: unknown[] = [];
+      const metadata = { kind: "report-probe", name: "report_probe" } as const;
+      const session = createStubSession({
+        state: {
+          "eve.tasks": {
+            tasks: [
+              {
+                taskInboxToken: "task-token",
+                createdByTurnId: "turn-parent",
                 metadata,
-                status: "completed",
                 taskId: "task_1",
+                taskRunId: "run_1",
+                terminalView: {
+                  lastOutput: { data: { result: "done" }, type: "result" },
+                  metadata,
+                  status: "completed",
+                  taskId: "task_1",
+                },
               },
-            },
-          ],
-          version: 2,
+            ],
+            version: 2,
+          },
         },
-      },
-    });
-    installSessionStoreMocks([session, session, session]);
-    vi.mocked(createExecutionNodeStep).mockImplementation(() => {
-      return async (stepSession): Promise<StepResult> => {
-        observedTaskDeliveries.push(contextStorage.getStore()?.get(TurnTaskDeliveryKey));
-        observedTaskStates.push(contextStorage.getStore()?.get(TurnTaskStateKey));
-        return { next: { done: true, output: "ok" }, session: stepSession };
-      };
-    });
+      });
+      installSessionStoreMocks([session, session, session]);
+      vi.mocked(createExecutionNodeStep).mockImplementation(() => {
+        return async (stepSession, input): Promise<StepResult> => {
+          observedInputs.push(input);
+          observedTaskDeliveries.push(contextStorage.getStore()?.get(TurnTaskDeliveryKey));
+          observedTaskStates.push(contextStorage.getStore()?.get(TurnTaskStateKey));
+          return { next: { done: true, output: "ok" }, session: stepSession };
+        };
+      });
 
-    const initialSerializedContext = createSerializedContext();
-    initialSerializedContext[TurnTaskStateKey.name] = "stale task state";
+      const initialSerializedContext = createSerializedContext();
+      const runtimeContext = await deserializeContext(initialSerializedContext);
+      const bundle = runtimeContext.require(BundleKey);
+      vi.mocked(getCompiledRuntimeAgentBundle).mockResolvedValue({
+        ...bundle,
+        turnAgent: { ...bundle.turnAgent, taskEventDelivery },
+      });
+      initialSerializedContext[TurnTaskStateKey.name] = "stale task state";
 
-    const first = await turnStep({
-      input: {
-        kind: "deliver",
-        payloads: [{ message: "Background task task_1 is completed." }],
-        taskDeliveryId: "task_1:ready:completed",
-      },
-      parentWritable: createTestWritable(),
-      serializedContext: initialSerializedContext,
-      sessionState: createStubSessionState(),
-    });
-    const second = await turnStep({
-      input: {
-        kind: "deliver",
-        payloads: [{ message: "Background task task_unknown is completed." }],
-        taskDeliveryId: "task_unknown:ready:completed",
-      },
-      parentWritable: createTestWritable(),
-      serializedContext: first.serializedContext,
-      sessionState: first.sessionState,
-    });
-    await turnStep({
-      input: { kind: "deliver", payloads: [{ message: "What happened?" }] },
-      parentWritable: createTestWritable(),
-      serializedContext: second.serializedContext,
-      sessionState: second.sessionState,
-    });
+      const first = await turnStep({
+        input: {
+          kind: "deliver",
+          payloads: [{ message: "Background task task_1 is completed." }],
+          taskDeliveryId: "task_1:ready:completed",
+        },
+        parentWritable: createTestWritable(),
+        serializedContext: initialSerializedContext,
+        sessionState: createStubSessionState(),
+      });
+      const second = await turnStep({
+        input: {
+          kind: "deliver",
+          payloads: [{ message: "Background task task_unknown is completed." }],
+          taskDeliveryId: "task_unknown:ready:completed",
+        },
+        parentWritable: createTestWritable(),
+        serializedContext: first.serializedContext,
+        sessionState: first.sessionState,
+      });
+      await turnStep({
+        input: { kind: "deliver", payloads: [{ message: "What happened?" }] },
+        parentWritable: createTestWritable(),
+        serializedContext: second.serializedContext,
+        sessionState: second.sessionState,
+      });
 
-    expect(observedTaskDeliveries).toEqual(["settled", "none", "none"]);
-    expect(observedTaskStates).toEqual([undefined, undefined, undefined]);
-  });
+      expect(observedTaskDeliveries).toEqual(["settled", "none", "none"]);
+      expect(observedTaskStates).toEqual([undefined, undefined, undefined]);
+      expect(observedInputs[0]).toMatchObject({
+        message: expect.stringContaining("Background task task_1 is completed."),
+      });
+      expect(JSON.stringify(observedInputs[0]).includes("[Task state]")).toBe(!taskEventDelivery);
+    },
+  );
 
   it("supplies initiating task state after the active turn accepts delegated work", async () => {
     const tasksBundle = {

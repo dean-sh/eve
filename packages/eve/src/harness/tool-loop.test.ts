@@ -9964,7 +9964,8 @@ describe("createToolLoopHarness", () => {
     async (compactOnly) => {
       vi.mocked(shouldCompact).mockReturnValue(true);
       vi.mocked(compactMessages).mockResolvedValue([
-        { role: "user", content: "Compacted request" },
+        { role: "user", content: "Summary of our conversation so far:" },
+        { role: "assistant", content: "Retained results and artifact paths" },
       ]);
       setupMockAgent({
         finishReason: "stop",
@@ -10005,6 +10006,13 @@ describe("createToolLoopHarness", () => {
       });
       expect(JSON.stringify(result.session.history)).not.toContain("private-token");
       expect(JSON.stringify(result.session.history)).not.toContain("private-run");
+      await runStep(result.session, { message: "Continue again" });
+      const nextCompactionInput = vi.mocked(compactMessages).mock.calls.at(-1)![0];
+      expect(nextCompactionInput.slice(0, 2)).toEqual([
+        { role: "user", content: "Summary of our conversation so far:" },
+        { role: "assistant", content: "Retained results and artifact paths" },
+      ]);
+      expect(JSON.stringify(nextCompactionInput)).not.toContain("[Task recovery after compaction]");
     },
   );
 
