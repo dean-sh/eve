@@ -33,6 +33,7 @@ const POLICIES = {
 /** Resolves one policy for both model prompting and empty-response recovery. */
 export function resolveDeliveryPolicy(input: {
   readonly hasOutputSchema: boolean;
+  readonly taskEventDelivery?: boolean;
   readonly isChild: boolean;
   readonly isFirstTurn: boolean;
   readonly hasScheduleProvenance: boolean;
@@ -40,6 +41,13 @@ export function resolveDeliveryPolicy(input: {
 }): DeliveryPolicy {
   // These runs have an explicit output consumer, so silence would violate the call contract.
   if (input.hasOutputSchema || input.isChild) return POLICIES.normal;
+  if (input.taskEventDelivery) {
+    return input.taskDeliveryPhase === "pending" || input.taskDeliveryPhase === "settled"
+      ? POLICIES.conditional
+      : input.isFirstTurn && input.hasScheduleProvenance
+        ? POLICIES.conditional
+        : POLICIES.normal;
+  }
   // Partial cohort results are withheld until the parent can report the cohort once.
   if (input.taskDeliveryPhase === "pending") return POLICIES.pending;
   // A complete cohort owes its caller the consolidated result and must not disappear silently.

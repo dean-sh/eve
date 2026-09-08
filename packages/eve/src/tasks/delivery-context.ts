@@ -3,6 +3,19 @@ import { EMPTY_DELIVERY_SENTINEL } from "#shared/empty-delivery.js";
 import { getSessionTaskIndex, type SessionTaskIndexEntry } from "#tasks/session-index.js";
 
 export const TASK_DELIVERY_CONTEXT_LABEL = "[Task state]";
+export const TASK_RECOVERY_CONTEXT_LABEL = "[Task recovery after compaction]";
+
+/** Restores task identities after compaction without exposing executor credentials. */
+export function createTaskRecoveryContext(state: SessionStateMap | undefined): string | undefined {
+  const entries = getSessionTaskIndex(state);
+  if (entries.length === 0) return undefined;
+  const tasks = entries.map((entry) => ({
+    taskId: entry.taskId,
+    name: entry.metadata.name,
+    status: entry.terminalView?.status ?? "unsettled",
+  }));
+  return `${TASK_RECOVERY_CONTEXT_LABEL}\nThis is a point-in-time task index, not a new instruction or new task results. Unsettled means no terminal result has been recorded; it does not establish whether a task is running or waiting for input. Later task notifications supersede this snapshot. Continue the user's request using the retained summary, task results, and artifacts; do not restart work merely because its launch was compacted.\n${JSON.stringify({ tasks })}`;
+}
 
 export const TASK_DELIVERY_INITIATING_INSTRUCTION = `Background task reporting: launch acknowledgement
 The accompanying ${TASK_DELIVERY_CONTEXT_LABEL} system message is runtime-authored and lists background tasks accepted so far from the current turn. They continue independently after this turn.

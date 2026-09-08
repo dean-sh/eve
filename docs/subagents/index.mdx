@@ -5,6 +5,16 @@ description: "Delegate work to root-agent copies or declared specialists with th
 
 eve supports two ways to delegate work: the root-only built-in `agent` tool, which starts or continues a copy of the root agent, and declared subagents, which are specialists with their own directories. Use a subagent to run independent work in parallel, narrow the available tools, or give a task to a specialist.
 
+## Agent-directed task delivery
+
+Set `experimental: { taskEventDelivery: true }` in the parent agent definition to let its instructions govern how it handles background results. This disables the default launch acknowledgement and cohort reporting instructions, and stops injecting the changing task inventory into model requests. Existing task receipts and notifications remain in conversation history; task ownership, cancellation, approvals, and notification delivery are unchanged.
+
+Tell the parent to continue useful work after delegation, consume results as they arrive, and distinguish finishing its current turn from completing the user's request. Background notification turns may intentionally deliver nothing when there is nothing new to report. Child sessions and structured-output sessions still require an output.
+
+After compaction, eve adds a point-in-time index of task IDs, names, and terminal or unsettled statuses. It does not duplicate result bodies or private executor credentials. The compaction summary retains relevant results and artifact paths. Keep large findings in shared artifacts and return their locations in task results. Later notifications supersede the recovery snapshot.
+
+The option defaults to off. It reduces changing prompt context but does not guarantee provider cache hits.
+
 ## The built-in `agent` tool
 
 The root session receives `agent` by default. The model calls it to delegate a task to a new copy of the root agent or continue an existing copy:

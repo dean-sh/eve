@@ -182,6 +182,10 @@ function normalizeExperimentalDefinition(
 
   const compiledExperimental: Mutable<NonNullable<CompiledAgentDefinition["experimental"]>> = {};
 
+  if (experimental.taskEventDelivery !== undefined) {
+    compiledExperimental.taskEventDelivery = experimental.taskEventDelivery;
+  }
+
   if (experimental.instrumentationProviders !== undefined) {
     compiledExperimental.instrumentationProviders = experimental.instrumentationProviders;
   }

@@ -194,6 +194,7 @@ import { isTurnCancellation, throwIfTurnAborted } from "#harness/turn-cancellati
 import type { JsonObject, JsonValue } from "#shared/json.js";
 import { EMPTY_DELIVERY_SENTINEL, hasEmptyDeliverySentinel } from "#shared/empty-delivery.js";
 import { resolveDeliveryPolicy } from "#tasks/delivery-policy.js";
+import { createTaskRecoveryContext, TASK_RECOVERY_CONTEXT_LABEL } from "#tasks/delivery-context.js";
 import { extractWorkflowStreamWriteErrorDetails } from "#harness/workflow-stream-error.js";
 import { getAdvertisedTools } from "#harness/advertised-tools.js";
 import {
@@ -1227,6 +1228,7 @@ export function createToolLoopHarness(config: ToolLoopHarnessConfig): StepFn {
     const isFirstTurn = emissionState.sequence === 0;
     const hasScheduleProvenance = isFirstTurn && ctx?.get(ScheduleIdKey) !== undefined;
     const deliveryPolicy = resolveDeliveryPolicy({
+      taskEventDelivery: session.agent.taskEventDelivery,
       hasScheduleProvenance,
       hasOutputSchema: session.outputSchema !== undefined,
       isChild: ctx?.get(ParentSessionKey) !== undefined,
@@ -1258,7 +1260,7 @@ export function createToolLoopHarness(config: ToolLoopHarnessConfig): StepFn {
         currentMessages.add(emissionState.sequence, skillAnnouncement);
       }
       const taskState = ctx.get(TurnTaskStateKey);
-      if (taskState !== undefined) {
+      if (taskState !== undefined && !session.agent.taskEventDelivery) {
         currentMessages.add(emissionState.sequence, taskState);
       }
     }
@@ -3227,6 +3229,21 @@ async function maybeCompact(input: {
       )
     : [...ordinary];
   messages = [...canonical.memory, ...compactedOrdinary];
+
+  if (session.agent.taskEventDelivery) {
+    messages = messages.filter(
+      (message) =>
+        !(
+          message.role === "user" &&
+          typeof message.content === "string" &&
+          message.content.startsWith(`${TASK_RECOVERY_CONTEXT_LABEL}\n`)
+        ),
+    );
+    const taskRecovery = createTaskRecoveryContext(session.state);
+    if (taskRecovery !== undefined) {
+      messages = [{ role: "user", content: taskRecovery }, ...messages];
+    }
+  }
 
   if (input.onCompaction) {
     for (const msg of input.onCompaction()) {

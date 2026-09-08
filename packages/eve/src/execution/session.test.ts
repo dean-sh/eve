@@ -76,6 +76,23 @@ describe("createCompactionConfig", () => {
 });
 
 describe("createSession", () => {
+  it.each([undefined, false, true])(
+    "carries task event delivery through session hydration (%s)",
+    (taskEventDelivery) => {
+      const turnAgent = createTestTurnAgent({ taskEventDelivery });
+      const session = createSession({
+        continuationToken: "root-token",
+        sessionId: "sess-root",
+        turnAgent,
+      });
+      expect(session.agent.taskEventDelivery).toBe(taskEventDelivery);
+      const hydrated = hydrateDurableSession({
+        durable: projectToDurableSession(session),
+        turnAgent,
+      });
+      expect(hydrated.agent.taskEventDelivery).toBe(taskEventDelivery);
+    },
+  );
   it("creates a session with correct agent configuration", () => {
     const outputSchema = { properties: { title: { type: "string" } }, type: "object" } as const;
     const session = createSession({

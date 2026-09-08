@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import type { SessionStateMap } from "#harness/types.js";
 import { EMPTY_DELIVERY_SENTINEL } from "#shared/empty-delivery.js";
 import {
+  createTaskRecoveryContext,
   resolveInitiatingTaskContext,
   resolveTaskDeliveryContext,
   TASK_DELIVERY_CONTEXT_LABEL,
@@ -14,6 +15,29 @@ import { SESSION_TASKS_STATE_KEY } from "#tasks/session-index.js";
 import type { TaskView } from "#tasks/types.js";
 
 const metadata = { kind: "report-probe", name: "report_probe" } as const;
+
+describe("createTaskRecoveryContext", () => {
+  it("retains task identities without exposing private routing or executor data", () => {
+    const recovery = createTaskRecoveryContext(
+      taskState([
+        taskEntry("task_1", "turn_1"),
+        taskEntry("task_2", "turn_1", { taskId: "task_2", metadata, status: "cancelled" }),
+      ]),
+    );
+    expect(JSON.parse(recovery!.split("\n").at(-1)!)).toEqual({
+      tasks: [
+        { taskId: "task_1", name: "report_probe", status: "unsettled" },
+        { taskId: "task_2", name: "report_probe", status: "cancelled" },
+      ],
+    });
+    expect(recovery).not.toContain("inbox-");
+    expect(recovery).not.toContain("run-task");
+  });
+
+  it("omits an empty task index", () => {
+    expect(createTaskRecoveryContext(undefined)).toBeUndefined();
+  });
+});
 
 describe("task delivery instructions", () => {
   it("initiating instruction requires one launch acknowledgement", () => {

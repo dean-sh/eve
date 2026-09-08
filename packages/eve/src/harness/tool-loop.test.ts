@@ -70,6 +70,7 @@ import {
 } from "#harness/input-requests.js";
 import { getPendingCoordinationBatch } from "#harness/coordination.js";
 import { AGENT_HANDLES_STATE_KEY } from "#subagents/handles/store.js";
+import { SESSION_TASKS_STATE_KEY } from "#tasks/session-index.js";
 import { BackgroundToolExecutorKey } from "#harness/background-tools.js";
 import { stashToolInterrupt } from "#harness/tool-interrupts.js";
 import { appendMissingToolResultMessages, createToolLoopHarness } from "#harness/tool-loop.js";
@@ -9958,6 +9959,55 @@ describe("createToolLoopHarness", () => {
     });
   });
 
+  it.each([false, true])(
+    "restores task identities during compaction (manual=%s)",
+    async (compactOnly) => {
+      vi.mocked(shouldCompact).mockReturnValue(true);
+      vi.mocked(compactMessages).mockResolvedValue([
+        { role: "user", content: "Compacted request" },
+      ]);
+      setupMockAgent({
+        finishReason: "stop",
+        response: { messages: [{ role: "assistant", content: "Resuming." }] },
+        text: "Resuming.",
+        toolCalls: [],
+        toolResults: [],
+      });
+      const initial = createTestSession({ history: [{ role: "user", content: "Old request" }] });
+      const runStep = createToolLoopHarness(
+        createTestConfig("conversation", undefined, { compactOnly }),
+      );
+      const result = await runStep(
+        {
+          ...initial,
+          agent: { ...initial.agent, taskEventDelivery: true },
+          state: {
+            ...initial.state,
+            [SESSION_TASKS_STATE_KEY]: {
+              version: 2,
+              tasks: [
+                {
+                  taskId: "task_pending",
+                  taskRunId: "private-run",
+                  taskInboxToken: "private-token",
+                  createdByTurnId: "turn_old",
+                  metadata: { kind: "child", name: "worker" },
+                },
+              ],
+            },
+          },
+        },
+        { message: "Continue" },
+      );
+      expect(result.session.history[0]).toMatchObject({
+        role: "user",
+        content: expect.stringContaining("task_pending"),
+      });
+      expect(JSON.stringify(result.session.history)).not.toContain("private-token");
+      expect(JSON.stringify(result.session.history)).not.toContain("private-run");
+    },
+  );
+
   it("invokes onCompaction callback after compaction", async () => {
     vi.mocked(shouldCompact).mockReturnValue(true);
     vi.mocked(compactMessages).mockResolvedValue([
@@ -12256,7 +12306,7 @@ describe("createToolLoopHarness", () => {
       });
     });
 
-    it.each(["plain", "client context", "compaction", "projected history"])(
+    it.each(["plain", "client context", "compaction", "projected history", "task events"])(
       "keeps framework context before the turn input across durable steps (%s)",
       async (scenario) => {
         const withClientContext = scenario === "client context";
@@ -12311,20 +12361,24 @@ describe("createToolLoopHarness", () => {
         const input = { context: ["Current channel context"], message: "Add 20 and 22." };
         const first = await contextStorage.run(ctx, () =>
           runStep(
-            initial,
+            scenario === "task events"
+              ? { ...initial, agent: { ...initial.agent, taskEventDelivery: true } }
+              : initial,
             withClientContext ? attachClientContext(input, ["Client context"]) : input,
           ),
         );
         expect(first.next).toBe(runStep);
         const firstPrompt = structuredClone(getLastAgentSettings().messages);
         setupMockAgent(defaultModelResult());
+        if (scenario === "task events")
+          ctx.set(TurnTaskStateKey, "Task status: another worker admitted");
         const restored = JSON.parse(JSON.stringify(first.session)) as HarnessSession;
         await contextStorage.run(ctx, () => runStep(restored));
         const nextPrompt = getLastAgentSettings().messages;
         expect(nextPrompt.slice(0, firstPrompt.length)).toEqual(firstPrompt);
         expect(
           nextPrompt.filter((message) => message.content === "Task status: analysis in progress"),
-        ).toHaveLength(1);
+        ).toHaveLength(scenario === "task events" ? 0 : 1);
       },
     );
 
@@ -12419,6 +12473,27 @@ describe("createToolLoopHarness", () => {
 
       const { instructions } = getLastAgentSettings();
       expect(instructions).toBe("You are a test assistant.");
+    });
+
+    it("keeps task events in history without injecting mutable inventory", async () => {
+      setupMockAgent(defaultModelResult());
+      const runStep = createToolLoopHarness(createTestConfig("conversation"));
+      const ctx = new ContextContainer();
+      ctx.set(TurnTaskDeliveryKey, "initiating");
+      ctx.set(TurnTaskStateKey, "Mutable task inventory");
+      const session = createTestSession();
+      await contextStorage.run(ctx, () =>
+        runStep(
+          {
+            ...session,
+            agent: { ...session.agent, taskEventDelivery: true },
+          },
+          { message: "Start background work." },
+        ),
+      );
+      const { instructions, messages } = getLastAgentSettings();
+      expect(instructions).toBe("You are a test assistant.");
+      expect(messages).toEqual([{ role: "user", content: "Start background work." }]);
     });
 
     it("adds initiating task-reporting guidance without enabling silent delivery", async () => {

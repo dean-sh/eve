@@ -204,6 +204,8 @@ export interface AgentLimitsDefinition {
  * These options are unstable and may change or be removed in any release.
  */
 export interface AgentExperimentalDefinition {
+  /** Use task notifications instead of mutable cohort context and let the agent choose when to deliver. */
+  readonly taskEventDelivery?: boolean;
   /**
    * Reads instrumentation from an `instrumentation/` directory of providers
    * rather than a single `agent/instrumentation.ts` config object.

@@ -12,6 +12,17 @@ import {
 } from "#compiler/validate-artifact.js";
 
 describe("compiled agent manifest v48", () => {
+  it.each([undefined, false, true])(
+    "round-trips the task event delivery opt-in (%s)",
+    async (taskEventDelivery) => {
+      const { manifest } = await compileFromMemory({
+        model: "openai/gpt-5.4",
+        agent: { model: "openai/gpt-5.4", experimental: { taskEventDelivery } },
+      });
+      const parsed = compiledAgentManifestSchema.parse(JSON.parse(JSON.stringify(manifest)));
+      expect(parsed.config.experimental?.taskEventDelivery).toBe(taskEventDelivery);
+    },
+  );
   it("round-trips a real compiled graph through the serialized schema", async () => {
     const { manifest } = await compileFromMemory({
       limits: { maxTokenCostUsdPerSession: 1.5 },
