@@ -19,7 +19,7 @@ function respond(request: MockModelRequest): MockModelResponse | string {
     if (taskState !== undefined) return handleRedundantReviewWake(taskState);
   }
 
-  // Framework agent-list notes are model context, not scenario turns.
+  // Framework announcements are model context, not scenario turns.
   const message = [...request.userMessages].reverse().find(isScenarioMessage) ?? "";
   if (request.userMessages.some((entry) => entry.includes("TASK-UPDATE-PROGRESS"))) {
     return "TASK-UPDATE-RECEIVED";
@@ -410,7 +410,7 @@ function hasTaskNotification(
 }
 
 function isScenarioMessage(message: string): boolean {
-  return !message.startsWith("[Agents]");
+  return /^(TASK-|CHILD-TASK-|Background task task_)/u.test(message);
 }
 
 function scenarioUserMessageCount(request: MockModelRequest): number {

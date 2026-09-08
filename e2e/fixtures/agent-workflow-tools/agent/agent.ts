@@ -7,7 +7,10 @@ import { mockModel, type MockModelRequest, type MockModelResponse } from "eve/ev
  * service "api"; once the turn holds a tool result the reply echoes it.
  */
 function respond(request: MockModelRequest): MockModelResponse | string {
-  const message = [...request.userMessages].reverse().find((entry) => entry.trim() !== "") ?? "";
+  const message =
+    [...request.userMessages]
+      .reverse()
+      .find((entry) => /^(WORKFLOW-|Background task task_)/u.test(entry)) ?? "";
   const probe = /WORKFLOW-PROBE-blocking-local-(hitl|auth)/u.exec(message);
   if (probe !== null) {
     const result = request.toolResults.find((entry) => entry.name === "blocking_agent_probe");
