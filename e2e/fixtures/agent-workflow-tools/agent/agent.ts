@@ -10,7 +10,7 @@ function respond(request: MockModelRequest): MockModelResponse | string {
   const message =
     [...request.userMessages]
       .reverse()
-      .find((entry) => /^(WORKFLOW-|Background task task_)/u.test(entry)) ?? "";
+      .find((entry) => /^(WORKFLOW-|(?:Background task|Deploy) task_)/u.test(entry)) ?? "";
   const probe = /WORKFLOW-PROBE-blocking-local-(hitl|auth)/u.exec(message);
   if (probe !== null) {
     const result = request.toolResults.find((entry) => entry.name === "blocking_agent_probe");
