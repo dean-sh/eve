@@ -56,6 +56,8 @@ import {
 } from "#context/keys.js";
 import { ChannelKey } from "#runtime/sessions/runtime-context-keys.js";
 import { normalizeChannelAudience } from "#shared/channel-audience.js";
+import { withErrorContent } from "#tracing/error-content-context.js";
+import type { AgentSamplingOperation } from "#tracing/agent-span-contract.js";
 import {
   isSampledTrace,
   resolveTracePolicy,
@@ -169,7 +171,7 @@ export interface InstrumentationRuntime {
   readonly runtimeContextResolvers?: readonly RuntimeContextResolver[];
   readonly runInContext: InstrumentationContextRunner;
   /** Whether the installed OTel sampler would record a trace with this id. */
-  readonly samplesTrace?: (traceId: string) => boolean;
+  readonly samplesTrace?: (traceId: string, operation?: AgentSamplingOperation) => boolean;
   readonly shutdown: () => Promise<void>;
   stepStartedRuntimeContextResolver?: InstrumentationEvents["step.started"];
 }
@@ -480,7 +482,7 @@ export function bindInstrumentationRuntime(
         try {
           return parentContext === undefined
             ? await run()
-            : await otelContext.with(parentContext, run);
+            : await otelContext.with(withErrorContent(parentContext, content.recordOutputs), run);
         } finally {
           turnSpan?.end();
           turnSpan = undefined;
@@ -609,7 +611,7 @@ function allocateSessionTraceSeed(input: {
     return undefined;
   const decision = localDecision();
   const traceId = input.runtime.idGenerator.generateTraceId();
-  const sampled = decision.action === "record" && (input.runtime.samplesTrace?.(traceId) ?? true);
+  const sampled = decision.action === "record";
   return {
     decision,
     spanId: input.runtime.idGenerator.allocateSpanId(),

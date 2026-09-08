@@ -1,7 +1,6 @@
 import {
   ROOT_CONTEXT,
   SpanKind,
-  SpanStatusCode,
   type Context,
   type Span,
   type SpanContext,
@@ -20,6 +19,7 @@ import { agentTraceIdentityAttributes } from "#tracing/agent-otel-attributes.js"
 import { withChannelAudience } from "#tracing/channel-audience-context.js";
 import type { AgentSpanIdGenerator } from "#tracing/agent-span-id-generator.js";
 import type { AgentActionContext } from "#tracing/agent-action-instrumentation.js";
+import { recordAgentSpanError as recordError } from "#tracing/agent-span-error.js";
 
 interface ToolSpanState {
   readonly actionKey: string;
@@ -213,7 +213,9 @@ export function createAgentToolInstrumentation(input: {
   }
 }
 
-function toolAttributes(event: InstrumentationToolCallStartedEvent): Record<string, string> {
+function toolAttributes(
+  event: InstrumentationToolCallStartedEvent,
+): Record<string, string | number> {
   return {
     "gen_ai.operation.name": "execute_tool",
     "gen_ai.tool.call.id": event.callId,
@@ -228,12 +230,4 @@ function toolAttributes(event: InstrumentationToolCallStartedEvent): Record<stri
 
 function contextFromSpanContext(spanContext: SpanContext): Context {
   return trace.setSpan(ROOT_CONTEXT, trace.wrapSpanContext(spanContext));
-}
-
-function recordError(span: Span, error: unknown): void {
-  span.setAttribute("error.type", error instanceof Error ? error.name || "Error" : "_OTHER");
-  if (error instanceof Error) {
-    span.recordException(error);
-    span.setStatus({ code: SpanStatusCode.ERROR, message: error.message });
-  } else span.setStatus({ code: SpanStatusCode.ERROR });
 }
