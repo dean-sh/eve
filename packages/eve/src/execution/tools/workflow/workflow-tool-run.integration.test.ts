@@ -19,6 +19,7 @@ import {
   reportingDeployWorkflow,
   stepThenRaceWorkflow,
   stepReferenceWorkflow,
+  workflowAuthorizationCapabilityProbe,
 } from "#internal/testing/workflow-tool-fixtures.js";
 import { waitForHook } from "#internal/testing/workflow-test-helpers.js";
 import { getRun, getWorld, start } from "#internal/workflow/runtime.js";
@@ -142,59 +143,54 @@ function eventsText(events: readonly { readonly data?: unknown }[]): string {
 }
 
 describe("workflow step authorization", () => {
-  it.each([false, true])(
-    "handles a driver without the auth capability (background=%s)",
-    async (background) => {
+  it.each(["blocking", "background"] as const)(
+    "runs %s auth with no advertised driver support",
+    async (execution) => {
       const runtime = await createWorkflowToolRuntime({
         agentName: "workflow-step-old-driver",
-        background,
         execute: authorizedDeployWorkflow,
         toolName: "deploy_service",
       });
       await runtime.run(async () => {
-        const world = await getWorld();
-        const getByToken = world.hooks.getByToken.bind(world.hooks);
-        // Reproduce the old driver's persisted advertisement, without replacing ctx APIs.
-        const legacyDriver = vi
-          .spyOn(world.hooks, "getByToken")
-          .mockImplementation(async (...args) => {
-            const hook = await getByToken(...args);
-            return args[0] === sessionCommandHookToken(hook.runId)
-              ? { ...hook, metadata: undefined }
-              : hook;
-          });
-        const run = await start(workflowEntry, [
+        const workflowId = Reflect.get(authorizedDeployWorkflow, "workflowId");
+        if (typeof workflowId !== "string") throw new Error("Missing fixture workflow id");
+        const auth = {
+          attributes: {},
+          authenticator: "test-idp",
+          issuer: "test-idp",
+          principalId: "user-1",
+          principalType: "user" as const,
+        };
+        const run = await start(workflowAuthorizationCapabilityProbe, [
           {
-            input: { message: 'Run deploy_service with service "preauthorized"' },
-            serializedContext: {
-              ...buildSerializedContext({
-                continuationToken: "http:step-old-driver",
-                mode: "conversation",
-              }),
-              "eve.auth": {
-                attributes: {},
-                authenticator: "test-idp",
-                issuer: "test-idp",
-                principalId: "user-1",
-                principalType: "user",
-              },
+            callId: "auth-call",
+            execution,
+            input: { service: "preauthorized" },
+            owner: { inbox: "unused-owner-inbox" },
+            session: {
+              auth: { current: auth, initiator: auth },
+              id: "old-session",
+              turn: { id: "new-turn", sequence: 1 },
             },
+            stepIndex: 0,
+            taskId: "auth-task",
+            toolName: "deploy_service",
+            workflowId,
           },
         ]);
-        const stream = captureTurnEvents(run);
-        try {
-          const expected = background ? "Start a new session" : "authenticatedAs";
-          const events = [];
-          for (let i = 0; i < 5 && !JSON.stringify(events).includes(expected); i++)
-            events.push(...(await stream.nextTurn()));
-          expect(JSON.stringify(events)).toContain(expected);
-          expect(filterEventsByType(events, "authorization.required")).toHaveLength(0);
-          expect(JSON.stringify(events)).not.toContain("secret:");
-        } finally {
-          stream.dispose();
-          await run.cancel();
-          legacyDriver.mockRestore();
+        const result = await run.returnValue;
+        if (execution === "background") {
+          expect(result.outcome).toMatchObject({
+            status: "failed",
+            error: { message: expect.stringContaining("Start a new session") },
+          });
+        } else {
+          expect(result.outcome).toMatchObject({
+            status: "completed",
+            output: { authenticatedAs: "user-1" },
+          });
         }
+        expect(JSON.stringify(result)).not.toContain("secret:");
       });
     },
     60_000,

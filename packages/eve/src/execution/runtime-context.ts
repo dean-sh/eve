@@ -56,7 +56,8 @@ export function buildRunContext(input: {
   }
 
   if (run.capabilities !== undefined) {
-    ctx.set(CapabilitiesKey, run.capabilities);
+    // Driver support belongs to this session, not the caller or parent session.
+    ctx.set(CapabilitiesKey, { ...run.capabilities, workflowTaskAuthorization: false });
   }
 
   if (run.requestId !== undefined) {

@@ -10,12 +10,6 @@ export const SESSION_INBOX_WIRE_VERSION =
 /** Hook metadata field advertising the consumer's inbox wire capability. */
 export const SESSION_INBOX_WIRE_VERSION_METADATA_KEY = "sessionInboxWireVersion";
 
-/**
- * The receiving driver supports workflow-task authorization events. SessionCapabilities
- * describes what the channel permits, which does not identify the driver's deployed code.
- */
-export const WORKFLOW_TASK_AUTHORIZATION_METADATA_KEY = "workflowTaskAuthorization";
-
 export const SESSION_INBOX_CONTEXT_KEY = "eve.sessionInbox";
 
 /** Immutable inbox coordinates advertised by the receiving session's driver. */

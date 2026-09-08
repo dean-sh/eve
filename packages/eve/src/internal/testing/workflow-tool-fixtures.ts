@@ -13,6 +13,7 @@ import {
 } from "#compiled/@workflow/core/index.js";
 
 import type { WorkflowToolContext } from "#tools/workflow-definition.js";
+import { executeWorkflowBody, type WorkflowBodyInput } from "#execution/tools/workflow/body.js";
 import type { TaskExec, TaskMessage } from "#tools/task.js";
 import {
   ConnectionAuthorizationFailedError,
@@ -245,4 +246,13 @@ export async function askThenRaceWorkflow(
   });
   const answer = await Promise.race([pending, workflowSleep("50ms")]);
   return { decided: answer === undefined ? "timed out" : "answered", service: input.service };
+}
+
+/** Runs the actual workflow body with the capability passed by its launching turn. */
+export async function workflowAuthorizationCapabilityProbe(
+  input: WorkflowBodyInput & { execution: "background" | "blocking" },
+) {
+  "use workflow";
+
+  return executeWorkflowBody(input, new AbortController().signal);
 }
