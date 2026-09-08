@@ -2253,7 +2253,7 @@ describe("turnStep", () => {
     expect(observedTaskStates).toEqual([undefined, undefined, undefined]);
   });
 
-  it("supplies initiating task state after the active turn accepts delegated work", async () => {
+  it.each(["none", "initiating"] as const)("refreshes task state (%s)", async (phase) => {
     const tasksBundle = {
       adapterRegistry: {
         adaptersByKind: new Map([[threadContextAdapter.kind, threadContextAdapter]]),
@@ -2315,7 +2315,8 @@ describe("turnStep", () => {
       };
     });
     const serializedContext = createSerializedContext();
-    serializedContext[TurnTaskDeliveryKey.name] = "none";
+    serializedContext[TurnTaskDeliveryKey.name] = phase;
+    serializedContext[TurnTaskStateKey.name] = "stale task snapshot";
 
     await turnStep({
       input: undefined,
